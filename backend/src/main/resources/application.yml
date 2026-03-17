@@ -1,0 +1,34 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: chaos-app
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/chaosdb}
+      auto-index-creation: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: Chaos Engineering POC
+    version: 1.0.0
+    description: Spring Boot + MongoDB demo for LitmusChaos experiments
+
+logging:
+  level:
+    com.chaos: DEBUG
+    org.springframework.data.mongodb: INFO

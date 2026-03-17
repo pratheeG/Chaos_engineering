@@ -1,0 +1,37 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chaos-ingress
+  namespace: chaos-ns
+  labels:
+    app: chaos-poc
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: chaos.local
+      http:
+        paths:
+          # API routes → Spring Boot backend
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 8080
+          # Actuator routes → Spring Boot backend
+          - path: /actuator
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 8080
+          # All other routes → React frontend (SPA)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: 80

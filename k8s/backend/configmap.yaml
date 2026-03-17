@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: chaos-ns
+  labels:
+    app: chaos-backend
+data:
+  MONGODB_URI: "mongodb://mongo-service:27017/chaosdb"
+  SPRING_PROFILES_ACTIVE: "docker"
+  SERVER_PORT: "8080"

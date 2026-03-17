@@ -1,0 +1,80 @@
+version: '3.9'
+
+services:
+
+  # ── MongoDB ──────────────────────────────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: chaos-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: chaosdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - chaos-net
+
+  # ── Spring Boot Backend ───────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chaos-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/chaosdb
+      SPRING_PROFILES_ACTIVE: docker
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - chaos-net
+    labels:
+      # LitmusChaos experiment labels
+      app: chaos-poc
+      layer: backend
+      litmuschaos.io/chaos: "true"
+
+  # ── React Frontend ────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: chaos-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      - BACKEND_HOST=backend
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - chaos-net
+    labels:
+      app: chaos-poc
+      layer: frontend
+
+volumes:
+  mongo_data:
+    driver: local
+
+networks:
+  chaos-net:
+    driver: bridge

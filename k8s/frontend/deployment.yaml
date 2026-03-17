@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chaos-frontend
+  namespace: chaos-ns
+  labels:
+    app: chaos-frontend
+    layer: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chaos-frontend
+  template:
+    metadata:
+      labels:
+        app: chaos-frontend
+        layer: frontend
+    spec:
+      containers:
+        - name: chaos-frontend
+          image: chaos-frontend:latest
+          imagePullPolicy: Never          # Use image built into Minikube's Docker
+          ports:
+            - containerPort: 80
+          env:
+            - name: BACKEND_HOST
+              value: backend-service
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3

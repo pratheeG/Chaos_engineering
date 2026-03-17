@@ -1,0 +1,30 @@
+server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Use Kubernetes/Docker built-in DNS resolver
+    resolver 127.0.0.11 kube-dns.kube-system.svc.cluster.local valid=5s;
+
+    # proxy API requests to Spring Boot backend
+    location /api/ {
+        # Using a variable forces Nginx to resolve at runtime, preventing crash
+        # if the backend pod is not yet available at startup
+        set $upstream ${BACKEND_HOST}:8080;
+        proxy_pass http://$upstream/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /actuator/ {
+        set $upstream ${BACKEND_HOST}:8080;
+        proxy_pass http://$upstream/actuator/;
+        proxy_set_header Host $host;
+    }
+
+    # SPA fallback
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
