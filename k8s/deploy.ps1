@@ -40,18 +40,12 @@ Write-Host "Applying Kubernetes manifests..." -ForegroundColor Yellow
 kubectl apply -f namespace.yaml
 Start-Sleep -Seconds 2
 
-kubectl apply -f mongo/
 kubectl apply -f backend/
 kubectl apply -f frontend/
 kubectl apply -f ingress.yaml
 
-# Install LitmusChaos operator
-Write-Host "Installing LitmusChaos operator..." -ForegroundColor Yellow
-kubectl apply -f litmus/operator-install.yaml
-
 # 6. Wait
 Write-Host "Waiting for pods to be ready..." -ForegroundColor Yellow
-kubectl wait --namespace chaos-ns --for=condition=ready pod --selector=layer=database --timeout=120s
 kubectl wait --namespace chaos-ns --for=condition=ready pod --selector=layer=backend --timeout=120s
 kubectl wait --namespace chaos-ns --for=condition=ready pod --selector=layer=frontend --timeout=120s
 

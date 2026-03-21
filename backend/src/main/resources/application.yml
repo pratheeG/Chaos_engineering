@@ -6,7 +6,8 @@ spring:
     name: chaos-app
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27017/chaosdb}
+      uri: mongodb+srv://lang_ai_user:${DB_PASSWORD}@langgraph-test.unh8kt7.mongodb.net/?appName=langgraph-test
+      database: chaosdb
       auto-index-creation: true
 
 management:

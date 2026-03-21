@@ -55,16 +55,26 @@ npm run dev
 
 ### Option B – Docker Compose (Recommended)
 
-**Prerequisites**: Docker Desktop
+**Prerequisites**: Docker Desktop, MongoDB Atlas account
 
-```bash
-# Build and start all 3 services
-docker compose up --build
+**Setup:**
 
-# UI:     http://localhost
-# API:    http://localhost:8080/api/products
-# Health: http://localhost:8080/actuator/health
-```
+1. Create a `.env` file in the root directory with your MongoDB password:
+   ```
+   DB_PASSWORD=your_mongodb_atlas_password
+   ```
+
+2. Build and start all 3 services:
+   ```bash
+   docker compose up --build
+   ```
+
+**Access:**
+   - UI:     http://localhost
+   - API:    http://localhost:8080/api/products
+   - Health: http://localhost:8080/actuator/health
+
+The backend connects to MongoDB Atlas at: `mongodb+srv://lang_ai_user:<DB_PASSWORD>@langgraph-test.unh8kt7.mongodb.net/chaosdb`
 
 To stop:
 ```bash
@@ -139,49 +149,58 @@ For Kubernetes deployments, apply the same labels to your Pod spec and use the e
 
 ### Install LitmusChaos & Run Pod-Delete (Kubernetes)
 
-All Litmus manifests are in `k8s/litmus/`. A single PowerShell script handles installation, RBAC, experiment setup, and execution.
+All Litmus manifests are in `k8s/litmus/`. We provide two approaches:
+
+#### ⚡ Approach 1: CLI-Based Runner (Recommended - No Dashboard)
+
+**Fastest & simplest** - Automated PowerShell script to run experiments directly
 
 ```powershell
-# 1. Install Litmus operator + Chaos Center + run pod-delete on the BACKEND (default)
+# 1. Deploy the full stack (includes LitmusChaos operator)
+cd k8s
+.\deploy.ps1
+
+# 2. Run pod-delete experiment on backend
+cd litmus/chaos-cli
+.\chaos.ps1 -Target backend
+
+# 3. Run pod-delete experiment on frontend
+.\chaos.ps1 -Target frontend
+```
+
+**Features:**
+- ✅ Fully automated (create RBAC, apply experiment, run, monitor)
+- ✅ Perfect for CI/CD pipelines & scripting
+- ✅ No dashboard overhead
+- ✅ Real-time pod recovery monitoring
+- ✅ Sequential or parallel experiment execution
+
+For detailed usage and troubleshooting, see [`k8s/litmus/chaos-cli/README.md`](k8s/litmus/chaos-cli/README.md)
+
+#### 🎨 Approach 2: Dashboard-Based Runner (Optional - Full UI)
+
+**Visual & interactive** - Web-based Chaos Center dashboard
+
+```powershell
+# Install LitmusChaos with Chaos Center dashboard
 cd k8s/litmus
 .\deploy-litmus.ps1
 
-# 2. Run pod-delete on FRONTEND (operator already installed)
-.\deploy-litmus.ps1 -Target frontend -SkipInstall
-
-# 3. Run pod-delete on MONGODB
-.\deploy-litmus.ps1 -Target mongo -SkipInstall
-
-# 4. Install without dashboard (operator-only, CLI mode)
-.\deploy-litmus.ps1 -NoDashboard
-
-# 5. Clean up all chaos resources
-.\deploy-litmus.ps1 -Cleanup
-```
-
-### Chaos Center Dashboard
-
-The script installs **Chaos Center** — a web dashboard to schedule, visualize, and monitor all chaos experiments.
-
-**Access the Dashboard:**
-```powershell
-# Option 1: Use minikube service
+# Access the dashboard
 minikube service litmus-frontend -n litmus
-
-# Option 2: Port-forward
-kubectl port-forward svc/litmus-frontend 9091:9091 -n litmus
-# Then open http://localhost:9091
+# OR: kubectl port-forward svc/litmus-frontend 9091:9091 -n litmus
+# Then open http://localhost:9091 (login: admin/litmus)
 ```
 
-**Default login:** `admin` / `litmus`
+**Features:**
+- 🎯 Visual experiment scheduling and monitoring
+- 📊 Resilience score tracking
+- 📈 Historical experiment data
+- 🔄 Experiment templating
 
-From the dashboard you can:
-- Connect your cluster as a Chaos Infrastructure
-- Schedule and run experiments (pod-delete, network chaos, CPU hog, etc.)
-- View real-time experiment progress and logs
-- Analyze resilience scores and past experiment results
+For dashboard setup, see [`k8s/litmus/chaos-center/README.md`](k8s/litmus/chaos-center/README.md) (if available)
 
-**Manual step-by-step (if you prefer):**
+#### 🔧 Manual Step-by-Step (Advanced)
 
 ```powershell
 # Install Litmus operator (creates 'litmus' namespace)
@@ -191,11 +210,11 @@ kubectl apply -f k8s/litmus/operator-install.yaml
 kubectl wait -n litmus --for=condition=ready pod -l app.kubernetes.io/component=operator --timeout=120s
 
 # Create RBAC + experiment definition
-kubectl apply -f k8s/litmus/pod-delete/rbac.yaml
-kubectl apply -f k8s/litmus/pod-delete/experiment.yaml
+kubectl apply -f k8s/litmus/chaos-cli/pod-delete/rbac.yaml
+kubectl apply -f k8s/litmus/chaos-cli/pod-delete/experiment.yaml
 
 # Trigger pod-delete on the backend
-kubectl apply -f k8s/litmus/pod-delete/engine-backend.yaml
+kubectl apply -f k8s/litmus/chaos-cli/pod-delete/engine-backend.yaml
 
 # Watch the chaos
 kubectl get pods -n chaos-ns -w
@@ -210,14 +229,18 @@ kubectl describe chaosresult -n chaos-ns
 ```
 k8s/litmus/
 ├── operator-install.yaml              # CRDs, operator deployment, RBAC
-├── chaos-center.yaml                  # Chaos Center dashboard (UI + API + Auth + Mongo)
 ├── deploy-litmus.ps1                  # Automated setup & run script
-└── pod-delete/
-    ├── rbac.yaml                      # ServiceAccount + Role + RoleBinding
-    ├── experiment.yaml                # ChaosExperiment definition
-    ├── engine-backend.yaml            # ChaosEngine → backend pods
-    ├── engine-frontend.yaml           # ChaosEngine → frontend pods
-    └── engine-mongo.yaml              # ChaosEngine → MongoDB pods
+├── chaos-cli/                         # CLI-based experiment runner (recommended)
+│   ├── README.md                      # CLI documentation & examples
+│   ├── chaos.ps1                      # Main automation script
+│   └── pod-delete/
+│       ├── rbac.yaml
+│       ├── experiment.yaml
+│       ├── engine-backend.yaml
+│       ├── engine-frontend.yaml
+│       └── engine-mongo.yaml
+└── chaos-center/                      # Chaos Center dashboard UI + backend (optional)
+    └── [dashboard manifests]
 ```
 
 ---
