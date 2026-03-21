@@ -1,0 +1,57 @@
+# ── ChaosEngine: Backend Pod Delete ────────────────────────────────────────────
+# Triggers the pod-delete experiment against the chaos-backend deployment.
+#
+# What happens:
+#   1. The Litmus operator detects this ChaosEngine CR
+#   2. A chaos-runner pod is created in chaos-ns
+#   3. The runner spawns an experiment job that deletes the backend pod(s)
+#   4. Kubernetes self-heals by recreating the pod via the Deployment
+#   5. Results are recorded in a ChaosResult CR
+#
+# To run:   kubectl apply -f engine-backend.yaml
+# To stop:  kubectl delete -f engine-backend.yaml
+# To check: kubectl get chaosresult -n chaos-ns
+# ───────────────────────────────────────────────────────────────────────────────
+
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: backend-pod-delete
+  namespace: chaos-ns
+  labels:
+    app.kubernetes.io/part-of: litmus
+    context: backend-chaos
+spec:
+  # ── Target Application ────────────────────────────────────────────────────────
+  appinfo:
+    appns: chaos-ns
+    applabel: "app=chaos-backend"
+    appkind: deployment
+
+  # Set to 'active' to start, 'stop' to halt mid-run
+  engineState: "active"
+
+  # ServiceAccount with permissions to run the experiment
+  chaosServiceAccount: pod-delete-sa
+
+  # ── Experiments ────────────────────────────────────────────────────────────────
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            # How long (seconds) the chaos experiment runs
+            - name: TOTAL_CHAOS_DURATION
+              value: "30"
+
+            # Interval (seconds) between pod deletions
+            - name: CHAOS_INTERVAL
+              value: "10"
+
+            # Force kill without graceful termination
+            - name: FORCE
+              value: "true"
+
+            # Percentage of matching pods to kill (empty = 1 pod)
+            - name: PODS_AFFECTED_PERC
+              value: ""

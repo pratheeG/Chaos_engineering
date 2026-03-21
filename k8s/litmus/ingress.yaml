@@ -1,0 +1,47 @@
+# ── Ingress: Chaos Center Dashboard ───────────────────────────────────────────
+# Exposes the Chaos Center UI at http://litmus.local
+# Requires: minikube tunnel + hosts file entry: 127.0.0.1 litmus.local
+# ───────────────────────────────────────────────────────────────────────────────
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: litmus-ingress
+  namespace: litmus
+  labels:
+    app.kubernetes.io/name: litmus
+    app.kubernetes.io/component: ingress
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: litmus.local
+      http:
+        paths:
+          # GraphQL API server
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: litmus-server
+                port:
+                  number: 9002
+          # Auth server
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: litmus-auth-server
+                port:
+                  number: 9003
+          # Frontend (catch-all)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: litmus-frontend
+                port:
+                  number: 9091

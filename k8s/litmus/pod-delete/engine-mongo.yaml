@@ -1,0 +1,44 @@
+# ── ChaosEngine: MongoDB Pod Delete ───────────────────────────────────────────
+# Triggers the pod-delete experiment against the mongo deployment.
+#
+# ⚠ WARNING: This will delete the MongoDB pod. Data is preserved on PVC,
+#   but the backend will lose database connectivity during the chaos window.
+#   Use this to test database resilience and reconnection logic.
+#
+# To run:   kubectl apply -f engine-mongo.yaml
+# To stop:  kubectl delete -f engine-mongo.yaml
+# To check: kubectl get chaosresult -n chaos-ns
+# ───────────────────────────────────────────────────────────────────────────────
+
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: mongo-pod-delete
+  namespace: chaos-ns
+  labels:
+    app.kubernetes.io/part-of: litmus
+    context: database-chaos
+spec:
+  # ── Target Application ────────────────────────────────────────────────────────
+  appinfo:
+    appns: chaos-ns
+    applabel: "app=mongo"
+    appkind: deployment
+
+  engineState: "active"
+  chaosServiceAccount: pod-delete-sa
+
+  # ── Experiments ────────────────────────────────────────────────────────────────
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "30"
+            - name: CHAOS_INTERVAL
+              value: "10"
+            - name: FORCE
+              value: "true"
+            - name: PODS_AFFECTED_PERC
+              value: ""

@@ -44,7 +44,10 @@ kubectl apply -f mongo/
 kubectl apply -f backend/
 kubectl apply -f frontend/
 kubectl apply -f ingress.yaml
-kubectl apply -f https://litmuschaos.github.io/litmus/litmus-operator-v3.yaml
+
+# Install LitmusChaos operator
+Write-Host "Installing LitmusChaos operator..." -ForegroundColor Yellow
+kubectl apply -f litmus/operator-install.yaml
 
 # 6. Wait
 Write-Host "Waiting for pods to be ready..." -ForegroundColor Yellow

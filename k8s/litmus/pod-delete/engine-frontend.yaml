@@ -1,0 +1,43 @@
+# ── ChaosEngine: Frontend Pod Delete ──────────────────────────────────────────
+# Triggers the pod-delete experiment against the chaos-frontend deployment.
+#
+# Apply this AFTER the backend experiment completes to test resilience
+# of each layer independently.
+#
+# To run:   kubectl apply -f engine-frontend.yaml
+# To stop:  kubectl delete -f engine-frontend.yaml
+# To check: kubectl get chaosresult -n chaos-ns
+# ───────────────────────────────────────────────────────────────────────────────
+
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: frontend-pod-delete
+  namespace: chaos-ns
+  labels:
+    app.kubernetes.io/part-of: litmus
+    context: frontend-chaos
+spec:
+  # ── Target Application ────────────────────────────────────────────────────────
+  appinfo:
+    appns: chaos-ns
+    applabel: "app=chaos-frontend"
+    appkind: deployment
+
+  engineState: "active"
+  chaosServiceAccount: pod-delete-sa
+
+  # ── Experiments ────────────────────────────────────────────────────────────────
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "30"
+            - name: CHAOS_INTERVAL
+              value: "10"
+            - name: FORCE
+              value: "true"
+            - name: PODS_AFFECTED_PERC
+              value: ""

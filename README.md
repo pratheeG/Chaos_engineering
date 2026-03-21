@@ -137,14 +137,87 @@ For Kubernetes deployments, apply the same labels to your Pod spec and use the e
 | **MongoDB Kill** | `chaos-mongo` | Backend health shows `mongo: DOWN` |
 | **Network Latency** | `chaos-net` | Slow API responses visible in UI |
 
-### Install LitmusChaos (Kubernetes)
+### Install LitmusChaos & Run Pod-Delete (Kubernetes)
 
-```bash
-# Install Litmus Operator
-kubectl apply -f https://litmuschaos.github.io/litmus/litmus-operator-v3.x.y.yaml
+All Litmus manifests are in `k8s/litmus/`. A single PowerShell script handles installation, RBAC, experiment setup, and execution.
 
-# Install Chaos Experiments
-kubectl apply -f https://hub.litmuschaos.io/api/chaos/3.x.y?file=charts/generic/pod-delete/experiment.yaml
+```powershell
+# 1. Install Litmus operator + Chaos Center + run pod-delete on the BACKEND (default)
+cd k8s/litmus
+.\deploy-litmus.ps1
+
+# 2. Run pod-delete on FRONTEND (operator already installed)
+.\deploy-litmus.ps1 -Target frontend -SkipInstall
+
+# 3. Run pod-delete on MONGODB
+.\deploy-litmus.ps1 -Target mongo -SkipInstall
+
+# 4. Install without dashboard (operator-only, CLI mode)
+.\deploy-litmus.ps1 -NoDashboard
+
+# 5. Clean up all chaos resources
+.\deploy-litmus.ps1 -Cleanup
+```
+
+### Chaos Center Dashboard
+
+The script installs **Chaos Center** — a web dashboard to schedule, visualize, and monitor all chaos experiments.
+
+**Access the Dashboard:**
+```powershell
+# Option 1: Use minikube service
+minikube service litmus-frontend -n litmus
+
+# Option 2: Port-forward
+kubectl port-forward svc/litmus-frontend 9091:9091 -n litmus
+# Then open http://localhost:9091
+```
+
+**Default login:** `admin` / `litmus`
+
+From the dashboard you can:
+- Connect your cluster as a Chaos Infrastructure
+- Schedule and run experiments (pod-delete, network chaos, CPU hog, etc.)
+- View real-time experiment progress and logs
+- Analyze resilience scores and past experiment results
+
+**Manual step-by-step (if you prefer):**
+
+```powershell
+# Install Litmus operator (creates 'litmus' namespace)
+kubectl apply -f k8s/litmus/operator-install.yaml
+
+# Wait for operator
+kubectl wait -n litmus --for=condition=ready pod -l app.kubernetes.io/component=operator --timeout=120s
+
+# Create RBAC + experiment definition
+kubectl apply -f k8s/litmus/pod-delete/rbac.yaml
+kubectl apply -f k8s/litmus/pod-delete/experiment.yaml
+
+# Trigger pod-delete on the backend
+kubectl apply -f k8s/litmus/pod-delete/engine-backend.yaml
+
+# Watch the chaos
+kubectl get pods -n chaos-ns -w
+
+# Check results
+kubectl get chaosresult -n chaos-ns
+kubectl describe chaosresult -n chaos-ns
+```
+
+#### Litmus File Structure
+
+```
+k8s/litmus/
+├── operator-install.yaml              # CRDs, operator deployment, RBAC
+├── chaos-center.yaml                  # Chaos Center dashboard (UI + API + Auth + Mongo)
+├── deploy-litmus.ps1                  # Automated setup & run script
+└── pod-delete/
+    ├── rbac.yaml                      # ServiceAccount + Role + RoleBinding
+    ├── experiment.yaml                # ChaosExperiment definition
+    ├── engine-backend.yaml            # ChaosEngine → backend pods
+    ├── engine-frontend.yaml           # ChaosEngine → frontend pods
+    └── engine-mongo.yaml              # ChaosEngine → MongoDB pods
 ```
 
 ---
@@ -178,6 +251,23 @@ Chaos Engineering/
 │   ├── nginx.conf
 │   ├── vite.config.ts
 │   └── Dockerfile
+├── k8s/
+│   ├── deploy.ps1                 # Main Minikube deployment script
+│   ├── namespace.yaml
+│   ├── ingress.yaml
+│   ├── backend/                   # Backend K8s manifests
+│   ├── frontend/                  # Frontend K8s manifests
+│   ├── mongo/                     # MongoDB K8s manifests
+│   └── litmus/                    # LitmusChaos configuration
+│       ├── operator-install.yaml
+│       ├── chaos-center.yaml      # Dashboard UI + API stack
+│       ├── deploy-litmus.ps1
+│       └── pod-delete/            # Pod-delete experiment
+│           ├── rbac.yaml
+│           ├── experiment.yaml
+│           ├── engine-backend.yaml
+│           ├── engine-frontend.yaml
+│           └── engine-mongo.yaml
 ├── docker-compose.yml
 └── README.md
 ```

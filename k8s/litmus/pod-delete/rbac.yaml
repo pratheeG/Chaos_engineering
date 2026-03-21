@@ -1,0 +1,70 @@
+# ── RBAC for Pod-Delete Experiment ──────────────────────────────────────────────
+# ServiceAccount, Role, and RoleBinding that the chaos-runner and experiment
+# job use to delete pods and report results in the 'chaos-ns' namespace.
+# ───────────────────────────────────────────────────────────────────────────────
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pod-delete-sa
+  namespace: chaos-ns
+  labels:
+    app.kubernetes.io/part-of: litmus
+    experiment: pod-delete
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-delete-role
+  namespace: chaos-ns
+  labels:
+    app.kubernetes.io/part-of: litmus
+    experiment: pod-delete
+rules:
+  # Core pod operations needed by the experiment
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "deletecollection"]
+  - apiGroups: [""]
+    resources: ["pods/exec", "pods/log"]
+    verbs: ["create", "get", "list"]
+  # Events for recording chaos status
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "get", "list", "patch", "update"]
+  # ConfigMaps for experiment data
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+  # Workload introspection
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets", "daemonsets"]
+    verbs: ["list", "get"]
+  # Jobs created by the chaos runner
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "list", "get", "delete", "deletecollection"]
+  # Litmus CRs
+  - apiGroups: ["litmuschaos.io"]
+    resources: ["chaosengines", "chaosexperiments", "chaosresults"]
+    verbs: ["create", "list", "get", "patch", "update", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pod-delete-rb
+  namespace: chaos-ns
+  labels:
+    app.kubernetes.io/part-of: litmus
+    experiment: pod-delete
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pod-delete-role
+subjects:
+  - kind: ServiceAccount
+    name: pod-delete-sa
+    namespace: chaos-ns
