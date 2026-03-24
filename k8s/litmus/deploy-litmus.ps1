@@ -64,6 +64,9 @@ if (-not $SkipInstall) {
         kubectl port-forward svc/chaos-litmus-frontend-service 9091:9091 -n litmus
     } | Out-Null
 
+    kubectl create rolebinding litmus-admin-binding --clusterrole=litmus-admin --serviceaccount=litmus:litmus -n chaos-ns
+    kubectl create clusterrolebinding litmus-admin-binding --clusterrole=litmus-admin --serviceaccount=litmus:litmus -n chaos-ns
+
     Write-Host "Installation complete!" -ForegroundColor Green
     Write-Host "Access Litmus via:" -ForegroundColor Green
     Write-Host "  1. Ingress (Domain):  http://litmus.local" -ForegroundColor Cyan
@@ -72,3 +75,11 @@ if (-not $SkipInstall) {
 } else {
     Write-Host ([environment]::NewLine + 'Skipping operator installation (--SkipInstall)') -ForegroundColor Yellow
 }
+
+# Port-forward to allow access via localhost:9091
+    Write-Host "Setting up port-forward to expose Litmus on localhost:9091..." -ForegroundColor Yellow
+    Start-Job -ScriptBlock {
+        kubectl port-forward svc/chaos-litmus-frontend-service 9091:9091 -n litmus
+    } | Out-Null
+
+    

@@ -44,6 +44,11 @@ kubectl apply -f backend/
 kubectl apply -f frontend/
 kubectl apply -f ingress.yaml
 
+kubectl apply -f litmus/chaos-center/chaos-ns-rbac.yaml -n chaos-ns
+
+kubectl label namespace chaos-ns litmuschaos.io/setting=litmus-admin
+kubectl annotate namespace chaos-ns litmuschaos.io/chaos="true"
+
 # 6. Wait
 Write-Host "Waiting for pods to be ready..." -ForegroundColor Yellow
 kubectl wait --namespace chaos-ns --for=condition=ready pod --selector=layer=backend --timeout=120s

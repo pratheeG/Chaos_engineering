@@ -1,0 +1,86 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: infra-role
+  namespace: chaos-ns
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/exec
+      - events
+      - configmaps
+      - secrets
+      - services
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update", "deletecollection"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+      - replicasets
+      - daemonsets
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update", "deletecollection"]
+  - apiGroups: ["litmuschaos.io"]
+    resources:
+      - chaosengines
+      - chaosexperiments
+      - chaosresults
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: infra-ops-role
+  namespace: chaos-ns
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - configmaps
+      - secrets
+      - events
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["litmuschaos.io"]
+    resources:
+      - chaosengines
+      - chaosexperiments
+      - chaosresults
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: infra-role-binding
+  namespace: chaos-ns
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: infra-role
+subjects:
+  - kind: ServiceAccount
+    name: litmus       # ✅ Confirmed from your output
+    namespace: litmus  # ✅ Confirmed from your output
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: infra-ops-role-binding
+  namespace: chaos-ns
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: infra-ops-role
+subjects:
+  - kind: ServiceAccount
+    name: litmus       # ✅ Confirmed from your output
+    namespace: litmus  # ✅ Confirmed from your output

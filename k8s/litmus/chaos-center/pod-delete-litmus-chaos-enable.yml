@@ -2,21 +2,21 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: pod-delete-sa
-  namespace: chaos-ns
+  name: litmus
+  namespace: litmus
 
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: argo-chaos
-  namespace: chaos-ns
+  namespace: litmus
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: argo-chaos-infra-role-binding
-  namespace: chaos-ns
+  namespace: litmus
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -24,13 +24,13 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: argo-chaos
-    namespace: chaos-ns
+    namespace: litmus
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: argo-chaos-ops-role-binding
-  namespace: chaos-ns
+  namespace: litmus
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -38,13 +38,13 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: argo-chaos
-    namespace: chaos-ns
+    namespace: litmus
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: workflow-controller-configmap
-  namespace: chaos-ns
+  namespace: litmus
 data:
   containerRuntimeExecutor: k8sapi
   executor: |
@@ -53,13 +53,13 @@ data:
       limits:
         cpu: 0.15
         memory: 512Mi
-  instanceID: 95d6aeae-a482-4d5a-9209-98dcfd165e7c
+  instanceID: f2522847-d790-4716-b39e-cfd81a68972f
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: workflow-controller-metrics
-  namespace: chaos-ns
+  namespace: litmus
 spec:
   ports:
     - name: metrics
@@ -73,7 +73,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: workflow-controller
-  namespace: chaos-ns
+  namespace: litmus
 spec:
   selector:
     matchLabels:
@@ -114,19 +114,19 @@ spec:
               memory: "500Mi"
               cpu: "225m"
               ephemeral-storage: "1Gi"
-      serviceAccountName: pod-delete-sa
+      serviceAccountName: litmus
 
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: subscriber-config
-  namespace: chaos-ns
+  namespace: litmus
 data:
-  SERVER_ADDR: http://localhost:9091/api/query
+  SERVER_ADDR: http://chaos-litmus-server-service.litmus.svc.cluster.local:9002/query
   INFRA_SCOPE: namespace
   VERSION: 3.26.0
-  START_TIME: "1774084867221"
+  START_TIME: "1774224230916"
   SKIP_SSL_VERIFY: "false"
   CUSTOM_TLS_CERT: ""
   IS_INFRA_CONFIRMED: "false"
@@ -137,16 +137,16 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: subscriber-secret
-  namespace: chaos-ns
+  namespace: litmus
 stringData:
-  INFRA_ID: 95d6aeae-a482-4d5a-9209-98dcfd165e7c
-  ACCESS_KEY: CQflwHX4Hb3WYkIbSUnzsk9fiDH5GCLm
+  INFRA_ID: f2522847-d790-4716-b39e-cfd81a68972f
+  ACCESS_KEY: oyLwZGnK9Bt5TstMTu58UgCrVV3tECGC
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: subscriber
-  namespace: chaos-ns
+  namespace: litmus
   labels:
     app: subscriber
 spec:
@@ -161,7 +161,7 @@ spec:
       tolerations: []
       
       #{NODE_SELECTOR}
-      serviceAccountName: pod-delete-sa
+      serviceAccountName: litmus
       containers:
         - name: subscriber
           image: litmuschaos.docker.scarf.sh/litmuschaos/litmusportal-subscriber:3.26.0
@@ -195,7 +195,7 @@ metadata:
   labels:
     app: event-tracker
   name: event-tracker
-  namespace: chaos-ns
+  namespace: litmus
 spec:
   replicas: 1
   selector:
@@ -209,7 +209,7 @@ spec:
       tolerations: []
       
       #{NODE_SELECTOR}
-      serviceAccountName: pod-delete-sa
+      serviceAccountName: litmus
       containers:
         - image: litmuschaos.docker.scarf.sh/litmuschaos/litmusportal-event-tracker:3.26.0
           imagePullPolicy: Always
@@ -241,7 +241,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: infra-role
-  namespace: chaos-ns
+  namespace: litmus
   labels:
     name: infra-role
 rules:
@@ -371,11 +371,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: infra-role-binding
-  namespace: chaos-ns
+  namespace: litmus
 subjects:
   - kind: ServiceAccount
-    name: pod-delete-sa
-    namespace: chaos-ns
+    name: litmus
+    namespace: litmus
 roleRef:
   kind: Role
   name: infra-role
@@ -385,7 +385,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: infra-ops-role
-  namespace: chaos-ns
+  namespace: litmus
 rules:
   - apiGroups: [ "" ]
     resources: [ "secrets" ]
@@ -399,22 +399,22 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: infra-ops-role-binding
-  namespace: chaos-ns
+  namespace: litmus
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: infra-ops-role
 subjects:
   - kind: ServiceAccount
-    name: pod-delete-sa
-    namespace: chaos-ns
+    name: litmus
+    namespace: litmus
 
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: litmus-admin
-  namespace: chaos-ns
+  namespace: litmus
   labels:
     name: litmus-admin
 ---
@@ -422,7 +422,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: litmus-admin-role
-  namespace: chaos-ns
+  namespace: litmus
   labels:
     name: litmus-admin-role
 rules:
@@ -512,7 +512,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: litmus-admin-role-binding
-  namespace: chaos-ns
+  namespace: litmus
   labels:
     name: litmus-admin-role-binding
 roleRef:
@@ -522,13 +522,13 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: litmus-admin
-    namespace: chaos-ns
+    namespace: litmus
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: litmus-admin-ops-role-binding
-  namespace: chaos-ns
+  namespace: litmus
   labels:
     name: litmus-admin-ops-role-binding
 roleRef:
@@ -538,7 +538,7 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: litmus-admin
-    namespace: chaos-ns
+    namespace: litmus
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -552,7 +552,7 @@ metadata:
     app.kubernetes.io/part-of: litmus
     app.kubernetes.io/managed-by: kubectl
   name: chaos-operator-ce
-  namespace: chaos-ns
+  namespace: litmus
 spec:
   replicas: 1
   selector:
@@ -570,7 +570,7 @@ spec:
         app.kubernetes.io/managed-by: kubectl
         name: chaos-operator
     spec:
-      serviceAccountName: pod-delete-sa
+      serviceAccountName: litmus
       tolerations: []
       
       #{NODE_SELECTOR}
@@ -619,7 +619,7 @@ metadata:
     app: chaos-exporter
     release: prometheus-stack
   name: chaos-exporter
-  namespace: chaos-ns
+  namespace: litmus
 spec:
   replicas: 1
   selector:
@@ -650,7 +650,7 @@ spec:
             - name: INJECTION_TIME_FILTER
               value: 'disable'
             - name: WATCH_NAMESPACE
-              value: chaos-ns
+              value: litmus
           resources:
             requests:
               memory: "300Mi"
@@ -660,7 +660,7 @@ spec:
               memory: "500Mi"
               cpu: "225m"
               ephemeral-storage: "1Gi"
-      serviceAccountName: pod-delete-sa
+      serviceAccountName: litmus
 ---
 apiVersion: v1
 kind: Service
@@ -668,7 +668,7 @@ metadata:
   labels:
     app: chaos-exporter
   name: chaos-exporter
-  namespace: chaos-ns
+  namespace: litmus
 spec:
   ports:
     - port: 8080
