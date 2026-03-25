@@ -45,6 +45,24 @@ services:
       layer: frontend
 
 
+  # ── AI Agent (Streamlit + LangGraph) ────────────────────────────────────────
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: chaos-agent
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    env_file:
+      - ./agent/.env
+    networks:
+      - chaos-net
+    labels:
+      app: chaos-poc
+      layer: agent
+
+
 networks:
   chaos-net:
     driver: bridge

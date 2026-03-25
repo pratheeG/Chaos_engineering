@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chaos-agent
+  namespace: chaos-ns
+  labels:
+    app: chaos-agent
+    layer: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chaos-agent
+  template:
+    metadata:
+      labels:
+        app: chaos-agent
+        layer: agent
+    spec:
+      containers:
+        - name: chaos-agent
+          image: chaos-agent:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8501
+          envFrom:
+            - secretRef:
+                name: agent-secrets
+          env:
+            - name: LLM_PROVIDER
+              value: "groq"
+            - name: LITMUS_API_URL
+              value: "http://chaos-litmus-frontend-service.litmus.svc.cluster.local:9091/api/query"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 20
+            periodSeconds: 10
