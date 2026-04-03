@@ -1,17 +1,24 @@
-"""Centralised configuration loaded from environment / .env file."""
+"""Centralised configuration loaded from environment / Secrets.toml file."""
 
 from __future__ import annotations
 
 import os
+import tomllib
 from pathlib import Path
 
-from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
-# Load .env from agent root (one level above this file)
-_env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(_env_path)
+# Load Secrets.toml from agent root (one level above this file)
+_env_path = Path(__file__).resolve().parent.parent / "Secrets.toml"
+print(f"Loading environment variables from: {_env_path}")
+try:
+    with open(_env_path, "rb") as f:
+        data = tomllib.load(f)
+    for key, value in data.items():
+        os.environ[key] = str(value)
+except FileNotFoundError:
+    print(f"Secrets.toml not found at {_env_path}, using environment variables only")
 
 
 class Settings(BaseSettings):
@@ -30,7 +37,6 @@ class Settings(BaseSettings):
     litmus_access_token: str = Field(default="")
 
     class Config:
-        env_file = ".env"
         env_file_encoding = "utf-8"
 
 

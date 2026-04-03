@@ -21,17 +21,29 @@ class LitmusClient:
 
     def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Synchronous GraphQL POST (keeps LangChain tools simple)."""
-        resp = httpx.post(
-            self._url,
-            json=payload,
-            headers=self._headers,
-            timeout=30.0,
-        )
-        resp.raise_for_status()
-        body = resp.json()
-        if "errors" in body:
-            raise RuntimeError(body["errors"])
-        return body["data"]
+        print(f"POSTing to LitmusChaos API at {self._url} with payload: {payload}, headers: {self._headers}")
+        try:
+            resp = httpx.post(
+                self._url,
+                json=payload,
+                headers=self._headers,
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            print(f"Received response from LitmusChaos API: {body}")
+            if "errors" in body:
+                raise RuntimeError(body["errors"])
+            return body["data"]
+        except httpx.RequestError as e:
+            print(f"Request error when connecting to LitmusChaos API: {e}")
+            raise RuntimeError(f"Request failed: {e}")
+        except httpx.HTTPStatusError as e:
+            print(f"HTTP error response from LitmusChaos API: {e.response.text}")
+            raise RuntimeError(f"HTTP error: {e}")
+        except Exception as e:
+            print(f"Unexpected error when communicating with LitmusChaos API: {e}")
+            raise RuntimeError(f"Unexpected error: {e}")
 
     # ── public operations ─────────────────────────────────────────────────
 
@@ -43,10 +55,15 @@ class LitmusClient:
                 totalNoOfExperiments
                 experiments {
                     experimentID
-                    experimentName
                     experimentType
+                    experimentManifest
+                    name
                     cronSyntax
+                    isCustomExperiment
                     updatedAt
+                    createdAt
+                    isRemoved
+                    tags
                     infra {
                         infraID
                         name
@@ -65,8 +82,14 @@ class LitmusClient:
         variables = {
             "projectID": self._project_id,
             "request": {
+                "experimentIDs": [],
                 "pagination": {"page": 0, "limit": 50},
             },
+             "sort": {
+                "field": "NAME",
+                "ascending": True
+            },
+            "filter": {}
         }
         return self._post({"query": query, "variables": variables})
 

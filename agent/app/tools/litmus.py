@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from langchain_core.tools import tool
 
-from app.config import settings
-from app.services.litmus_client import LitmusClient
+from config import settings
+from services.litmus_client import LitmusClient
 
 _client = LitmusClient(
     api_url=settings.litmus_api_url,
@@ -20,6 +20,7 @@ def list_experiments() -> str:
     """List all chaos experiments configured in the LitmusChaos project.
     Returns experiment names, IDs, infrastructure, and recent run details."""
     try:
+        print("Fetching experiments from LitmusChaos...")
         data = _client.list_experiments()
         result = data.get("listExperiment", {})
         experiments = result.get("experiments", [])
@@ -29,14 +30,18 @@ def list_experiments() -> str:
         lines = [f"Total experiments: {result.get('totalNoOfExperiments', len(experiments))}\n"]
         for exp in experiments:
             recent = exp.get("recentExperimentRunDetails") or []
+            print('recent ', recent)
             last_run = recent[0] if recent else {}
             infra = exp.get("infra") or {}
             lines.append(
-                f"• {exp['experimentName']}\n"
+                f"• {exp['name']}\n"
                 f"  ID: {exp['experimentID']}\n"
                 f"  Type: {exp.get('experimentType', 'N/A')}\n"
                 f"  Infra: {infra.get('name', 'N/A')}\n"
                 f"  Last Run Phase: {last_run.get('phase', 'N/A')} | "
+                f"  Last Run At: {last_run.get('updatedAt', 'N/A')} | "
+                f"  Last Run Id: {last_run.get('experimentRunID', 'N/A')} | "
+                f"  Total Runs: {len(recent)} | "
                 f"Resiliency: {last_run.get('resiliencyScore', 'N/A')}"
             )
         return "\n".join(lines)
@@ -76,6 +81,7 @@ def list_probes() -> str:
     Returns probe names, types, infrastructure type, and recent execution status."""
     try:
         data = _client.list_probes()
+        print("Received probe data:", json.dumps(data, indent=2))
         probes = data.get("listProbes", [])
         if not probes:
             return "No probes found in the project."

@@ -1,0 +1,197 @@
+kind: Workflow
+apiVersion: argoproj.io/v1alpha1
+metadata:
+  name: pod-cpu-hog-experiment
+  namespace: litmus
+  labels:
+    infra_id: 03b148c6-4e92-4341-9ea6-9841c8dce164
+    revision_id: 842fdc54-0096-4309-af50-22f07ec103a2
+    subject: chaos-ns_chaos-backend
+    workflow_id: 5f13b0be-4d79-42d7-9d30-496b990a00fb
+    workflows.argoproj.io/controller-instanceid: 03b148c6-4e92-4341-9ea6-9841c8dce164
+spec:
+  templates:
+    - name: argowf-chaos
+      inputs: {}
+      outputs: {}
+      metadata: {}
+      steps:
+        - - name: install-chaos-faults
+            template: install-chaos-faults
+            arguments: {}
+        - - name: run-chaos
+            template: run-chaos
+            arguments: {}
+        - - name: cleanup-chaos-resources
+            template: cleanup-chaos-resources
+            arguments: {}
+    - name: install-chaos-faults
+      inputs:
+        artifacts:
+          - name: install-chaos-faults
+            path: /tmp/pod-cpu-hog.yaml
+            raw:
+              data: >
+                apiVersion: litmuschaos.io/v1alpha1
+
+                description:
+                  message: |
+                    Injects cpu consumption on pods belonging to an app deployment
+                kind: ChaosExperiment
+
+                metadata:
+                  name: pod-cpu-hog
+                  namespace: litmus
+                spec:
+                  definition:
+                    scope: Namespaced
+                    permissions:
+                      - apiGroups:
+                          - ""
+                          - "batch"
+                          - "litmuschaos.io"
+                          - "apps"
+                        resources:
+                          - "jobs"
+                          - "pods"
+                          - "pods/log"
+                          - "pods/exec"
+                          - "events"
+                          - "chaosengines"
+                          - "chaosexperiments"
+                          - "chaosresults"
+                        verbs:
+                          - "create"
+                          - "list"
+                          - "get"
+                          - "patch"
+                          - "update"
+                          - "delete"
+                    image: "litmuschaos.docker.scarf.sh/litmuschaos/go-runner:3.24.0"
+                    imagePullPolicy: Always
+                    args:
+                    - -c
+                    - ./experiments -name pod-cpu-hog
+                    command:
+                    - /bin/bash
+                    env:
+                    - name: TOTAL_CHAOS_DURATION
+                      value: '60'
+
+                    - name: CHAOS_INTERVAL
+                      value: '10'
+
+                    - name: CPU_CORES
+                      value: '1'
+
+                    - name: PODS_AFFECTED_PERC
+                      value: '50'
+
+                    - name: RAMP_TIME
+                      value: '15'
+
+                    - name: TARGET_CONTAINER
+                      value: 'chaos-backend'
+
+                    labels:
+                      name: pod-cpu-hog
+      outputs: {}
+      metadata: {}
+      container:
+        name: ""
+        image: litmuschaos/k8s:latest
+        command:
+          - sh
+          - -c
+        args:
+          - kubectl apply -f /tmp/pod-cpu-hog.yaml -n litmus
+        resources: {}
+    - name: run-chaos
+      inputs:
+        artifacts:
+          - name: run-chaos
+            path: /tmp/chaosengine-run-chaos.yaml
+            raw:
+              data: >
+                apiVersion: litmuschaos.io/v1alpha1
+
+                kind: ChaosEngine
+
+                metadata:
+                  namespace: "{{workflow.parameters.adminModeNamespace}}"
+                  labels:
+                    context: chaos-ns_chaos-backend
+                    workflow_run_id: "{{ workflow.uid }}"
+                    workflow_name: pod-cpu-hog-experiment
+                  annotations:
+                    probeRef: '[{"name":"chaos-ui","mode":"Continuous"}]'
+                  generateName: run-chaos
+                spec:
+                  appinfo:
+                    appns: chaos-ns
+                    applabel: app=chaos-backend
+                    appkind: deployment
+                  jobCleanUpPolicy: retain
+                  engineState: active
+                  chaosServiceAccount: litmus-admin
+                  experiments:
+                    - name: pod-cpu-hog
+                      spec:
+                        components:
+                          env:
+                            - name: TARGET_CONTAINER
+                              value: chaos-backend
+                            - name: CPU_CORES
+                              value: "1"
+                            - name: TOTAL_CHAOS_DURATION
+                              value: "60"
+                            - name: PODS_AFFECTED_PERC
+                              value: "50"
+                            - name: RAMP_TIME
+                              value: "10"
+                            - name: CHAOS_KILL_COMMAND
+                              value: kill -9 $(ps afx | grep "[md5sum] /dev/zero" | awk '{print$1}' | tr '\n'
+                                ' ')
+                            - name: CONTAINER_RUNTIME
+                              value: "docker"
+                            - name: SOCKET_PATH
+                              value: "/var/run/docker.sock"
+                            - name: PRIVILEGED
+                              value: "true"
+      outputs: {}
+      metadata:
+        labels:
+          weight: "10"
+      container:
+        name: ""
+        image: docker.io/litmuschaos/litmus-checker:2.11.0
+        args:
+          - -file=/tmp/chaosengine-run-chaos.yaml
+          - -saveName=/tmp/engine-name
+        resources: {}
+    - name: cleanup-chaos-resources
+      inputs: {}
+      outputs: {}
+      metadata: {}
+      container:
+        name: ""
+        image: litmuschaos/k8s:latest
+        command:
+          - sh
+          - -c
+        args:
+          - kubectl delete chaosengine -l workflow_run_id={{workflow.uid}} -n
+            {{workflow.parameters.adminModeNamespace}}
+        resources: {}
+  entrypoint: argowf-chaos
+  arguments:
+    parameters:
+      - name: adminModeNamespace
+        value: litmus
+      - name: appNamespace
+        value: chaos-ns
+  serviceAccountName: argo-chaos
+  securityContext:
+    runAsUser: 1000
+    runAsNonRoot: true
+status: {}

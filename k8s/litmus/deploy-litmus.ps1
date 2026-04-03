@@ -66,6 +66,7 @@ if (-not $SkipInstall) {
 
     kubectl create rolebinding litmus-admin-binding --clusterrole=litmus-admin --serviceaccount=litmus:litmus -n chaos-ns
     kubectl create clusterrolebinding litmus-admin-binding --clusterrole=litmus-admin --serviceaccount=litmus:litmus -n chaos-ns
+    kubectl label namespace chaos-ns pod-security.kubernetes.io/enforce=privileged
 
     Write-Host "Installation complete!" -ForegroundColor Green
     Write-Host "Access Litmus via:" -ForegroundColor Green

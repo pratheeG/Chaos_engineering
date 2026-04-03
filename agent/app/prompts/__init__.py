@@ -1,1 +1,1 @@
-from app.prompts.system import SYSTEM_PROMPT  # noqa: F401
+from prompts.system import SYSTEM_PROMPT  # noqa: F401

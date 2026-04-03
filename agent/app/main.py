@@ -5,8 +5,8 @@ from __future__ import annotations
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
 
-from app.graph import build_graph
-from app.config import settings
+from graph import build_graph
+from config import settings
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -27,6 +27,8 @@ with st.sidebar:
         index=0 if settings.llm_provider == "groq" else 1,
         label_visibility="collapsed",
     )
+
+    print('settings before sidebar input:', settings.dict())
 
     st.markdown("**LitmusChaos**")
     litmus_url = st.text_input("API URL", value=settings.litmus_api_url)

@@ -6,10 +6,10 @@ from langchain_core.messages import SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 
-from app.config import settings
-from app.graph.state import AgentState
-from app.prompts.system import SYSTEM_PROMPT
-from app.tools.litmus import litmus_tools
+from config import settings
+from graph.state import AgentState
+from prompts.system import SYSTEM_PROMPT
+from tools.litmus import litmus_tools
 
 
 def _get_llm():
