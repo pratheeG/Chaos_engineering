@@ -11,7 +11,6 @@ from pydantic import Field
 
 # Load Secrets.toml from agent root (one level above this file)
 _env_path = Path(__file__).resolve().parent.parent / "Secrets.toml"
-print(f"Loading environment variables from: {_env_path}")
 try:
     with open(_env_path, "rb") as f:
         data = tomllib.load(f)

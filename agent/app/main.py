@@ -28,8 +28,6 @@ with st.sidebar:
         label_visibility="collapsed",
     )
 
-    print('settings before sidebar input:', settings.dict())
-
     st.markdown("**LitmusChaos**")
     litmus_url = st.text_input("API URL", value=settings.litmus_api_url)
     project_id = st.text_input("Project ID", value=settings.litmus_project_id)

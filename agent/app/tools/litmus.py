@@ -16,6 +16,38 @@ _client = LitmusClient(
 
 
 @tool
+def get_experiment(experiment_id: str) -> str:
+    """Get details of a specific chaos experiment by ID.
+    If the experiment id is not known, use list_experiments to find it first.
+    Returns experiment details including name, ID, infrastructure, and recent run details."""
+    try:
+        print("Fetching experiment from LitmusChaos...")
+        data = _client.get_experiment(experiment_id)
+        exp = data.get("getExperiment", {})
+        if not exp:
+            return "Experiment not found."
+
+        recent = exp.get("recentExperimentRunDetails") or []
+        last_run = recent[0] if recent else {}
+        infra = exp.get("infra") or {}
+        lines = [
+            f"• {exp['name']}\n"
+            f"  ID: {exp['experimentID']}\n"
+            f"  Type: {exp.get('experimentType', 'N/A')}\n"
+            f"  Description: {exp.get('description', 'N/A')}\n"
+            f"  Infra: {infra.get('name', 'N/A')}\n"
+            f"  Last Run Phase: {last_run.get('phase', 'N/A')} | "
+            f"  Last Run At: {last_run.get('updatedAt', 'N/A')} | "
+            f"  Last Run Id: {last_run.get('experimentRunID', 'N/A')} | "
+            f"  Total Runs: {len(recent)} | "
+            f"Resiliency: {last_run.get('resiliencyScore', 'N/A')}"
+        ]
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error fetching experiment: {e}"
+          
+
+@tool
 def list_experiments() -> str:
     """List all chaos experiments configured in the LitmusChaos project.
     Returns experiment names, IDs, infrastructure, and recent run details."""
@@ -30,19 +62,20 @@ def list_experiments() -> str:
         lines = [f"Total experiments: {result.get('totalNoOfExperiments', len(experiments))}\n"]
         for exp in experiments:
             recent = exp.get("recentExperimentRunDetails") or []
-            print('recent ', recent)
             last_run = recent[0] if recent else {}
             infra = exp.get("infra") or {}
+            print(f"Experiment description: {exp.get('description', 'N/A')}")
             lines.append(
                 f"• {exp['name']}\n"
                 f"  ID: {exp['experimentID']}\n"
                 f"  Type: {exp.get('experimentType', 'N/A')}\n"
+                f"  Description: {exp.get('description', 'N/A')}\n"
                 f"  Infra: {infra.get('name', 'N/A')}\n"
                 f"  Last Run Phase: {last_run.get('phase', 'N/A')} | "
                 f"  Last Run At: {last_run.get('updatedAt', 'N/A')} | "
                 f"  Last Run Id: {last_run.get('experimentRunID', 'N/A')} | "
                 f"  Total Runs: {len(recent)} | "
-                f"Resiliency: {last_run.get('resiliencyScore', 'N/A')}"
+                f"  Resiliency: {last_run.get('resiliencyScore', 'N/A')}"
             )
         return "\n".join(lines)
     except Exception as e:
@@ -156,4 +189,5 @@ litmus_tools = [
     list_probes,
     run_experiment,
     get_experiment_run_status,
+    get_experiment
 ]
