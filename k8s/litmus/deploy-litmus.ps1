@@ -48,9 +48,12 @@ if (-not $SkipInstall) {
     helm repo add litmuschaos https://litmuschaos.github.io/litmus-helm/
     helm repo list
 
+    
+    helm repo update
+
     kubectl create ns litmus
 
-    helm install chaos litmuschaos/litmus --namespace=litmus --set portal.frontend.service.type=NodePort
+    helm install chaos litmuschaos/litmus --namespace=litmus --set portal.frontend.service.type=NodePort --set portal.server.graphqlServer.genericEnv.CHAOS_CENTER_UI_ENDPOINT=http://chaos-litmus-frontend-service.litmus.svc.cluster.local:9091
     
     Write-Host "Waiting for Litmus pods to initialize..." -ForegroundColor Yellow
     # TODO UnComment the below code and remove the static sleep once the operator is stable and ready to create the ChaosCenter resources
@@ -58,12 +61,6 @@ if (-not $SkipInstall) {
 
     kubectl apply -f ingress.yaml
     
-    # Port-forward to allow access via localhost:9091
-    Write-Host "Setting up port-forward to expose Litmus on localhost:9091..." -ForegroundColor Yellow
-    Start-Job -ScriptBlock {
-        kubectl port-forward svc/chaos-litmus-frontend-service 9091:9091 -n litmus
-    } | Out-Null
-
     kubectl create rolebinding litmus-admin-binding --clusterrole=litmus-admin --serviceaccount=litmus:litmus -n chaos-ns
     kubectl create clusterrolebinding litmus-admin-binding --clusterrole=litmus-admin --serviceaccount=litmus:litmus -n chaos-ns
     kubectl label namespace chaos-ns pod-security.kubernetes.io/enforce=privileged
@@ -77,10 +74,9 @@ if (-not $SkipInstall) {
     Write-Host ([environment]::NewLine + 'Skipping operator installation (--SkipInstall)') -ForegroundColor Yellow
 }
 
-# Port-forward to allow access via localhost:9091
-    Write-Host "Setting up port-forward to expose Litmus on localhost:9091..." -ForegroundColor Yellow
-    Start-Job -ScriptBlock {
-        kubectl port-forward svc/chaos-litmus-frontend-service 9091:9091 -n litmus
-    } | Out-Null
 
-    
+# Change the type from NodePort/Cluster to LoadBalanacer
+# kubectl edit svc chaos-litmus-frontend-service -n litmus
+
+# Port Forward it manually to access it via the system ip:9091
+# kubectl port-forward -n litmus --address 0.0.0.0 svc/chaos-litmus-frontend-service  9091:9091
