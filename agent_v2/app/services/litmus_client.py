@@ -178,3 +178,43 @@ class LitmusClient:
         }
         return self._post({"query": query, "variables": variables})
                 
+    def list_probes(self) -> dict[str, Any]:
+        """Return all probes in the project."""
+        query = """
+        query ListProbes($projectID: ID!, $infrastructureType: InfrastructureType) {
+            listProbes(projectID: $projectID, infrastructureType: $infrastructureType) {
+                name
+                type
+                description
+                infrastructureType
+                recentExecutions {
+                    status {
+                        verdict
+                    }
+                }
+                updatedAt
+            }
+        }
+        """
+        variables = {
+            "projectID": self._project_id,
+            "infrastructureType": "Kubernetes",
+        }
+        return self._post({"query": query, "variables": variables})
+
+    def save_experiment(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Save/Create a chaos experiment."""
+        query = """
+        mutation SaveChaosExperiment($projectID: ID!, $request: SaveChaosExperimentRequest!) {
+            saveChaosExperiment(
+                projectID: $projectID
+                request: $request
+            )
+        }
+        """
+        variables = {
+            "projectID": self._project_id,
+            "request": request,
+        }
+        return self._post({"query": query, "variables": variables})
+                

@@ -14,3 +14,8 @@ class PlannerState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     # Whether user has confirmed the final plan
     confirmed: bool
+
+class ExecutorState(TypedDict):
+    """State that flows through the Executor Agent LangGraph."""
+    messages: Annotated[list[BaseMessage], add_messages]
+    completed: bool

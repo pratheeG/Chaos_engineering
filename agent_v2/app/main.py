@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 
 from graph import build_graph
+from graph.executor import build_executor_graph
 from config import settings
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -32,6 +33,7 @@ app = FastAPI(
 
 # Single compiled graph instance with MemorySaver checkpointing
 _planner = build_graph()
+_executor = build_executor_graph()
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -58,9 +60,9 @@ def _last_ai_message(state_values: dict) -> str:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@app.post("/chat")
+@app.post("/chat/plan")
 async def chat(request: ChatRequest):
-    """Send a user message. Handles both new conversations and resumed paused ones."""
+    """Send a user message to the Planner Agent."""
     config = _config(request.thread_id)
 
     try:
@@ -82,15 +84,59 @@ async def chat(request: ChatRequest):
 
         latest = _planner.get_state(config)
         waiting = len(latest.next) > 0
+        planner_done = len(latest.next) == 0 and bool(latest.values)
 
         return {
             "thread_id": request.thread_id,
             "status": "waiting_for_user" if waiting else "completed",
+            "show_execute_button": planner_done,
             "pending_nodes": list(latest.next),
             "message": _last_ai_message(last_values or {}),
         }
 
     except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/chat/execute")
+async def execute(request: ChatRequest):
+    """Trigger the Executor Agent to run the designed plan."""
+    config = _config(request.thread_id)
+
+    try:
+        executor_state = _executor.get_state(config)
+            
+        if not executor_state.values:
+            # Executor is starting up. Seed it with Planner's final context
+            planner_state = _planner.get_state(config)
+            plan_context = _last_ai_message(planner_state.values) if planner_state.values else "No previous plan state found."
+
+            initial_prompt = f"Here is the finalized plan from the Planner:\n\n{plan_context}\n\nUser request: {request.message}"
+            inputs = {"messages": [HumanMessage(content=initial_prompt)], "completed": False}
+            gen = _executor.stream(inputs, config, stream_mode="values")
+        else:
+            # Executor evaluating an ongoing conversation
+            inputs = {"messages": [HumanMessage(content=request.message)]}
+            _executor.update_state(config, {"messages": [HumanMessage(content=request.message)]})
+            gen = _executor.stream(None, config, stream_mode="values")
+
+        last_values = None
+        for state_values in gen:
+            last_values = state_values
+
+        latest = _executor.get_state(config)
+        waiting = len(latest.next) > 0
+
+        return {
+            "thread_id": request.thread_id,
+            "status": "waiting_for_user" if waiting else "completed",
+            "message": _last_ai_message(last_values or {}),
+        }
+
+    except Exception as exc:
+        print("=================================")
+        print('Error executing plan: ', exc)
+        print("=================================")
         raise HTTPException(status_code=500, detail=str(exc))
 
 

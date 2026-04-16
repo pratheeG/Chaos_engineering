@@ -56,7 +56,6 @@ def _call_planner(state: PlannerState) -> dict:
     # Inject system prompt at the front if not already present
     if not messages or messages[0].type != "system":
         messages = [SystemMessage(content=PLANNER_SYSTEM_PROMPT)] + messages
-    print("messages ", messages)
     response = _llm_with_tools.invoke(messages)
     return {"messages": [response]}
 

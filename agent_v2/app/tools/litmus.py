@@ -86,10 +86,76 @@ def list_kubernetes_deployments(namespace: str = "default") -> str:
     })
 
 
+@tool
+def list_probes() -> str:
+    """List all probes configured in the LitmusChaos project.
+    Use this to identify which probes can be evaluated during chaos experiments.
+    Returns probe names, infrastructure type, and description."""
+    try:
+        data = _client.list_probes()
+        probes = data.get("listProbes", [])
+        if not probes:
+            return "No probes found in the project."
+
+        lines = [f"Total probes: {len(probes)}\n"]
+        for p in probes:
+            lines.append(
+                f"• {p['name']}\n"
+                f"  Type: {p.get('type', 'N/A')}\n"
+                f"  Infra Type: {p.get('infrastructureType', 'N/A')}\n"
+                f"  Description: {p.get('description', '-')}"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error listing probes: {e}"
+
+
+@tool
+def create_experiment(manifest_json_str: str) -> str:
+    """Create a new chaos experiment using a JSON string representing the SaveChaosExperimentRequest.
+    
+    Args:
+        manifest_json_str: The full JSON representation of the `SaveChaosExperimentRequest`.
+    """
+    try:
+        request = json.loads(manifest_json_str)
+        data = _client.save_experiment(request)
+        return f"Experiment created successfully: {data.get('saveChaosExperiment', 'Unknown Response')}"
+    except Exception as e:
+        print('Error creating experiment: ', e)
+        return f"Error creating experiment: {e}"
+
+
+@tool
+def run_experiment(experiment_id: str) -> str:
+    """Run (trigger) an existing chaos experiment by its experiment ID.
+    
+    Args:
+        experiment_id: The unique ID of the experiment to run.
+    """
+    try:
+        data = _client.run_experiment(experiment_id)
+        notify_id = data.get("runChaosExperiment", {}).get("notifyID", "unknown")
+        return (
+            f"Experiment triggered successfully!\n"
+            f"Experiment ID: {experiment_id}\n"
+            f"Notification ID: {notify_id}"
+        )
+    except Exception as e:
+        return f"Error running experiment: {e}"
+
+
 # ── Export ────────────────────────────────────────────────────────────────────
 
 planner_tools = [
     list_experiments,
     get_hub_faults,
     list_kubernetes_deployments,
+    list_probes,
+]
+
+executor_tools = [
+    list_experiments,
+    create_experiment,
+    run_experiment,
 ]
