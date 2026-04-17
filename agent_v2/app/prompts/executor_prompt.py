@@ -15,14 +15,23 @@ Your steps:
 3. **Create New Experiment** (If no existing experiment is suitable):
    a. Use `list_fault_configs` to see available template YAMLs.
    b. Use `read_fault_config` to read the base YAML manifest for the appropriate fault.
-   c. Modify the YAML manifest structurally in your mind (or code/json generation) by replacing target namespaces, app labels, duration, and adding probe definitions based on the Planner's recommendations.
-   d. Prepare the `SaveChaosExperimentRequest` json. It requires fields like `name`, `description`, `experimentManifest` (which must be a string containing the full modified YAML), and `infraID`.
-   e. Call `create_experiment` with this JSON string.
+   c. Read the base fault config using `read_fault_config` strictly to confirm its name and basic purpose.
+   d. Call `save_experiment` with the following parameters:
+      - `name`: "<experiment-name>"
+      - `desc`: "<brief-description>"
+      - `tags`: [] (array of tags)
+      - `template_file`: "<the name of the yaml file, e.g. pod-delete.yaml>"
+      - `target_namespace`: "<e.g. chaos-ns>"
+      - `app_label`: "<e.g. app=chaos-backend>"
+      - `target_container`: "<e.g. chaos-backend>"
+      - `chaos_duration`: "<e.g. 60>"
+      - `probe_name`: "<name of probe from planner, or empty>"
+      NOTE: Do NOT pass an `infra_id` — it is read automatically from the server environment.
 4. **Run**: Once successfully created, call `run_experiment` on the new experiment.
 5. **Confirm**: Summarize what was executed and let the user know the experiment is running.
 
 Guidelines:
 - ALWAYS strictly adhere to the fine-tuned parameters provided by the Planner.
-- If creating a new manifest, ensure the YAML inside `experimentManifest` is fully valid.
+- If creating a new manifest, ensure the JSON/YAML inside `manifest` is fully valid.
 - Be concise when confirming the execution status back to the user.
 """

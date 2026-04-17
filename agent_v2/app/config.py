@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     litmus_project_id: str = Field(default="")
     litmus_access_token: str = Field(default="")
     litmus_hub_id: str = Field(default="")
+    litmus_infra_id: str = Field(default="")
 
     @property
     def litmus_api_url(self) -> str:

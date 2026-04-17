@@ -44,7 +44,8 @@ def list_experiments() -> str:
                 f"  ID: {exp['experimentID']}\n"
                 f"  Description: {exp.get('description', 'N/A')}\n"
                 f"  Tags: {', '.join(exp.get('tags') or [])}\n"
-                f"  Infra: {infra.get('name', 'N/A')}\n"
+                f"  Infra Name: {infra.get('name', 'N/A')}\n"
+                f"  Infra ID: {infra.get('infraID', 'N/A')}\n"
                 f"  Last Run Phase: {last_run.get('phase', 'N/A')}"
             )
         return "\n".join(lines)
@@ -110,16 +111,87 @@ def list_probes() -> str:
         return f"Error listing probes: {e}"
 
 
+import yaml
+import uuid
+import os
+from app.config import settings
+
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fault_configs")
+
 @tool
-def create_experiment(manifest_json_str: str) -> str:
-    """Create a new chaos experiment using a JSON string representing the SaveChaosExperimentRequest.
+def save_experiment(
+    name: str, 
+    desc: str, 
+    tags: list[str], 
+    template_file: str,
+    target_namespace: str,
+    app_label: str,
+    target_container: str,
+    chaos_duration: str,
+    probe_name: str = ""
+) -> str:
+    """Creates a chaos experiment by injecting target parameters into a base template.
     
     Args:
-        manifest_json_str: The full JSON representation of the `SaveChaosExperimentRequest`.
+        name: Name of the experiment (e.g. 'pod-delete-chaos')
+        desc: Description of the experiment
+        tags: List of tags
+        template_file: Name of the YAML file in fault_configs (e.g. 'pod-delete.yaml')
+        target_namespace: Usually 'chaos-ns'
+        app_label: e.g. 'app=chaos-backend'
+        target_container: Name of the container to target
+        chaos_duration: Duration in seconds, e.g. '60'
+        probe_name: Name of a probe to attach (optional, leave empty if none)
     """
     try:
-        request = json.loads(manifest_json_str)
-        data = _client.save_experiment(request)
+        path = os.path.join(CONFIG_DIR, template_file)
+        if not os.path.exists(path):
+            return f"Error: Template {template_file} not found."
+            
+        with open(path, "r") as f:
+            manifest_str = f.read()
+            
+        # Fallbacks to ensure the GraphQL request doesn't bounce empty names
+        if not name or name.strip() == "":
+            uid_str = str(uuid.uuid4())
+            name = f"chaos-exp-{uid_str[:8]}"
+            
+        # Perform simple targeted string replacements on the template
+        manifest_str = manifest_str.replace("{{TARGET_NAMESPACE}}", target_namespace)
+        manifest_str = manifest_str.replace("{{TARGET_APP_LABEL}}", app_label)
+        manifest_str = manifest_str.replace("{{TARGET_CONTAINER}}", target_container)
+        manifest_str = manifest_str.replace("{{TOTAL_CHAOS_DURATION}}", chaos_duration)
+        
+        # Format the probe JSON array if provided
+        if probe_name:
+            probe_json_str = '[{"name":"' + probe_name + '","mode":"Continuous"}]'
+            manifest_str = manifest_str.replace("{{PROBE_REF}}", probe_json_str)
+        else:
+            manifest_str = manifest_str.replace("{{PROBE_REF}}", '[]')
+            
+        manifest_str = manifest_str.replace("{{workflow.parameters.adminModeNamespace}}", "litmus")
+
+        # Load the YAML safely
+        workflow_dict = yaml.safe_load(manifest_str)
+
+        manifest_json_str = json.dumps(workflow_dict)
+
+        # Read infra ID from environment config — never requires the agent to look it up
+        infra_id = settings.litmus_infra_id
+        if not infra_id:
+            return "Error: LITMUS_INFRA_ID is not set in the .env file."
+
+        request_payload = {
+            "id": str(uuid.uuid4()),
+            "name": name,
+            "description": desc,
+            "tags": tags,
+            "infraID": infra_id,
+            "manifest": manifest_json_str
+        }
+
+        print(f"Creating experiment {name} on infra {infra_id} using {template_file}")
+        data = _client.save_experiment(request_payload)
         return f"Experiment created successfully: {data.get('saveChaosExperiment', 'Unknown Response')}"
     except Exception as e:
         print('Error creating experiment: ', e)
@@ -156,6 +228,6 @@ planner_tools = [
 
 executor_tools = [
     list_experiments,
-    create_experiment,
+    save_experiment,
     run_experiment,
 ]
