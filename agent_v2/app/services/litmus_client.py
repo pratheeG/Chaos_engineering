@@ -57,6 +57,11 @@ class LitmusClient:
                     name
                     description
                     tags
+                    weightages {
+                        faultName
+                        weightage
+                    }
+                    experimentManifest
                     infra {
                         infraID
                         name

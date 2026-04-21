@@ -43,6 +43,8 @@ def list_experiments() -> str:
                 f"• {exp['name']}\n"
                 f"  ID: {exp['experimentID']}\n"
                 f"  Description: {exp.get('description', 'N/A')}\n"
+                f"  Weightages: {exp.get('weightages', 'N/A')}\n"
+                f"  Experiment Manifest: {exp.get('experimentManifest', 'N/A')}\n"
                 f"  Tags: {', '.join(exp.get('tags') or [])}\n"
                 f"  Infra Name: {infra.get('name', 'N/A')}\n"
                 f"  Infra ID: {infra.get('infraID', 'N/A')}\n"

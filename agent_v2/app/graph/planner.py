@@ -43,8 +43,15 @@ def _get_llm():
             api_key=settings.groq_api_key,
             temperature=0,
         )
+    elif provider == "ollama":
+        from langchain_ollama import ChatOllama
+        return ChatOllama(
+            model=settings.ollama_model,
+            base_url=settings.ollama_base_url,
+            temperature=0,
+        )
     else:
-        raise ValueError(f"Unsupported LLM provider: {provider}. Use 'openai' or 'groq'.")
+        raise ValueError(f"Unsupported LLM provider: {provider}. Use 'openai', 'groq', or 'ollama'.")
 
 
 # ── Node functions ────────────────────────────────────────────────────────────

@@ -95,6 +95,9 @@ async def chat(request: ChatRequest):
         }
 
     except Exception as exc:
+        print("=================================")
+        print('Error planning: ', exc)
+        print("=================================")
         raise HTTPException(status_code=500, detail=str(exc))
 
 

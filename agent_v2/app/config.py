@@ -15,13 +15,16 @@ load_dotenv(dotenv_path=_root_env, override=False)
 
 class Settings(BaseSettings):
     # ── LLM ──────────────────────────────────────────────────────────────────
-    llm_provider: str = Field(default="groq", description="openai | groq")
+    llm_provider: str = Field(default="groq", description="openai | groq | ollama")
 
     openai_api_key: str = Field(default="")
     openai_model: str = Field(default="gpt-4o")
 
     groq_api_key: str = Field(default="")
     groq_model: str = Field(default="llama-3.3-70b-versatile")
+
+    ollama_model: str = Field(default="llama3")
+    ollama_base_url: str = Field(default="http://localhost:11434")
 
     # ── LitmusChaos ──────────────────────────────────────────────────────────
     chaos_center_endpoint: str = Field(default="http://localhost:9002")
