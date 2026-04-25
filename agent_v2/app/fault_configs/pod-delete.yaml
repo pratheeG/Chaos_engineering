@@ -1,7 +1,7 @@
 kind: Workflow
 apiVersion: argoproj.io/v1alpha1
 metadata:
-  name: pod-delete
+  name: "{{EXPERIMENT_NAME}}"
   namespace: litmus
 spec:
   templates:
@@ -199,13 +199,12 @@ spec:
                 apiVersion: litmuschaos.io/v1alpha1
                 kind: ChaosEngine
                 metadata:
-                  name: nginx-chaos
                   namespace: "{{workflow.parameters.adminModeNamespace}}"
                   labels:
                     workflow_run_id: "{{ workflow.uid }}"
                   annotations:
                     probeRef: '{{PROBE_REF}}'
-                  generateName: pod-delete-r76
+                  generateName: pod-delete-r76-
                 spec:
                   appinfo:
                     appns: {{TARGET_NAMESPACE}}
@@ -253,8 +252,7 @@ spec:
       - name: adminModeNamespace
         value: litmus
   serviceAccountName: argo-chaos
-  podGC:
-    strategy: OnWorkflowCompletion
+
   securityContext:
     runAsUser: 1000
     runAsNonRoot: true

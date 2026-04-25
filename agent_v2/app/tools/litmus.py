@@ -39,12 +39,16 @@ def list_experiments() -> str:
             recent = exp.get("recentExperimentRunDetails") or []
             last_run = recent[0] if recent else {}
             infra = exp.get("infra") or {}
+            
+            # Check if manifest exists but don't print the whole string.
+            has_manifest = bool(exp.get('experimentManifest'))
+            
             lines.append(
                 f"• {exp['name']}\n"
                 f"  ID: {exp['experimentID']}\n"
                 f"  Description: {exp.get('description', 'N/A')}\n"
                 f"  Weightages: {exp.get('weightages', 'N/A')}\n"
-                f"  Experiment Manifest: {exp.get('experimentManifest', 'N/A')}\n"
+                f"  Has Manifest: {has_manifest}\n"
                 f"  Tags: {', '.join(exp.get('tags') or [])}\n"
                 f"  Infra Name: {infra.get('name', 'N/A')}\n"
                 f"  Infra ID: {infra.get('infraID', 'N/A')}\n"
@@ -68,13 +72,25 @@ def get_hub_faults(goal: str) -> str:
     hub_faults = next((item for item in result if item["spec"]["displayName"] == "Kubernetes"), None)
     if not hub_faults:
         return "No Chaos faults found in the project."
-    return hub_faults
+        
+    faults = hub_faults.get("spec", {}).get("faults", [])
+    if not faults:
+        return "No faults found in the Kubernetes category."
+        
+    lines = [f"Total Kubernetes Faults: {len(faults)}\n"]
+    # Limit number of characters broadly or return names and descriptions
+    for f in faults:
+        name = f.get("name", "Unknown")
+        desc = f.get("description", "-")
+        lines.append(f"• {name}: {desc[:100]}...") # truncate description to keep tokens low
+        
+    return "\n".join(lines)
 
 
 # ── Kubernetes Tool (Mocked) ──────────────────────────────────────────────────
 
 @tool
-def list_kubernetes_deployments(namespace: str = "default") -> str:
+def list_kubernetes_deployments(namespace: str = "chaos-ns") -> str:
     """Lists available Kubernetes deployments in the given namespace.
     Use this to identify which services/deployments can be targeted for chaos.
     
@@ -159,6 +175,7 @@ def save_experiment(
             name = f"chaos-exp-{uid_str[:8]}"
             
         # Perform simple targeted string replacements on the template
+        manifest_str = manifest_str.replace("{{EXPERIMENT_NAME}}", name)
         manifest_str = manifest_str.replace("{{TARGET_NAMESPACE}}", target_namespace)
         manifest_str = manifest_str.replace("{{TARGET_APP_LABEL}}", app_label)
         manifest_str = manifest_str.replace("{{TARGET_CONTAINER}}", target_container)
