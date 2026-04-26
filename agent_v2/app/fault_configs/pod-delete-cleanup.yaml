@@ -1,0 +1,14 @@
+# Static template: cleanup-chaos-resources
+# Deletes all ChaosEngine resources tagged with the workflow run ID after the experiment finishes.
+# Merged into the final Argo Workflow by merge_workflow_yaml().
+# DO NOT add dynamic placeholders here — this file is fixed across all experiments.
+
+name: cleanup-chaos-resources
+container:
+  name: ""
+  image: docker.io/litmuschaos/k8s:2.11.0
+  command:
+    - sh
+    - -c
+  args:
+    - kubectl delete chaosengine -l workflow_run_id={{workflow.uid}} -n litmus

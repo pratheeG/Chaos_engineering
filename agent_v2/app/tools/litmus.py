@@ -131,71 +131,52 @@ def list_probes() -> str:
 
 import yaml
 import uuid
-import os
-from app.config import settings
+from config import settings
+from tools.yaml_builder import SaveExperimentInput, get_cached_workflow_yaml
 
-CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fault_configs")
-
-@tool
+@tool(args_schema=SaveExperimentInput)
 def save_experiment(
-    name: str, 
-    desc: str, 
-    tags: list[str], 
-    template_file: str,
-    target_namespace: str,
-    app_label: str,
-    target_container: str,
-    chaos_duration: str,
-    probe_name: str = ""
+    name: str,
+    desc: str,
+    tags: list[str],
+    experiment_name: str,
 ) -> str:
-    """Creates a chaos experiment by injecting target parameters into a base template.
-    
+    """Saves and registers a chaos experiment in LitmusChaos.
+
+    Uses experiment_name to retrieve the pre-built workflow YAML from internal cache
+    (stored by merge_workflow_yaml). Do NOT pass the YAML string directly.
+
+    IMPORTANT: Call tools in this order first:
+      1. generate_pod_delete_engines() - generate engine template blocks
+      2. merge_workflow_yaml()          - assemble and cache the workflow
+      3. validate_workflow_yaml()       - confirm VALID before saving
+    Only call this tool after validate_workflow_yaml() returns a VALID result.
+
     Args:
-        name: Name of the experiment (e.g. 'pod-delete-chaos')
-        desc: Description of the experiment
-        tags: List of tags
-        template_file: Name of the YAML file in fault_configs (e.g. 'pod-delete.yaml')
-        target_namespace: Usually 'chaos-ns'
-        app_label: e.g. 'app=chaos-backend'
-        target_container: Name of the container to target
-        chaos_duration: Duration in seconds, e.g. '60'
-        probe_name: Name of a probe to attach (optional, leave empty if none)
+        name:            Experiment name shown in LitmusChaos UI.
+        desc:            Human-readable description.
+        tags:            List of tag strings.
+        experiment_name: The cache key from merge_workflow_yaml (same as the workflow name).
     """
     try:
-        path = os.path.join(CONFIG_DIR, template_file)
-        if not os.path.exists(path):
-            return f"Error: Template {template_file} not found."
-            
-        with open(path, "r") as f:
-            manifest_str = f.read()
-            
-        # Fallbacks to ensure the GraphQL request doesn't bounce empty names
         if not name or name.strip() == "":
-            uid_str = str(uuid.uuid4())
-            name = f"chaos-exp-{uid_str[:8]}"
-            
-        # Perform simple targeted string replacements on the template
-        manifest_str = manifest_str.replace("{{EXPERIMENT_NAME}}", name)
-        manifest_str = manifest_str.replace("{{TARGET_NAMESPACE}}", target_namespace)
-        manifest_str = manifest_str.replace("{{TARGET_APP_LABEL}}", app_label)
-        manifest_str = manifest_str.replace("{{TARGET_CONTAINER}}", target_container)
-        manifest_str = manifest_str.replace("{{TOTAL_CHAOS_DURATION}}", chaos_duration)
-        
-        # Format the probe JSON array if provided
-        if probe_name:
-            probe_json_str = '[{"name":"' + probe_name + '","mode":"Continuous"}]'
-            manifest_str = manifest_str.replace("{{PROBE_REF}}", probe_json_str)
-        else:
-            manifest_str = manifest_str.replace("{{PROBE_REF}}", '[]')
-            
-        manifest_str = manifest_str.replace("{{workflow.parameters.adminModeNamespace}}", "litmus")
+            name = f"chaos-exp-{str(uuid.uuid4())[:8]}"
 
-        # Load the YAML safely
-        workflow_dict = yaml.safe_load(manifest_str)
+        # Retrieve YAML from cache — never accept it as a direct parameter
+        workflow_yaml = get_cached_workflow_yaml(experiment_name)
+        if not workflow_yaml:
+            return (
+                f"Error: No cached workflow found for experiment_name='{experiment_name}'. "
+                "Call merge_workflow_yaml() and validate_workflow_yaml() first."
+            )
+
+        try:
+            workflow_dict = yaml.safe_load(workflow_yaml)
+        except yaml.YAMLError as exc:
+            return f"Error: Cached workflow YAML could not be parsed - {exc}."
 
         manifest_json_str = json.dumps(workflow_dict)
 
-        # Read infra ID from environment config — never requires the agent to look it up
         infra_id = settings.litmus_infra_id
         if not infra_id:
             return "Error: LITMUS_INFRA_ID is not set in the .env file."
@@ -206,14 +187,14 @@ def save_experiment(
             "description": desc,
             "tags": tags,
             "infraID": infra_id,
-            "manifest": manifest_json_str
+            "manifest": manifest_json_str,
         }
 
-        print(f"Creating experiment {name} on infra {infra_id} using {template_file}")
+        print(f"Creating experiment '{name}' on infra {infra_id}")
         data = _client.save_experiment(request_payload)
         return f"Experiment created successfully: {data.get('saveChaosExperiment', 'Unknown Response')}"
     except Exception as e:
-        print('Error creating experiment: ', e)
+        print("Error creating experiment:", e)
         return f"Error creating experiment: {e}"
 
 
@@ -245,8 +226,11 @@ planner_tools = [
     list_probes,
 ]
 
+from tools.yaml_builder import yaml_builder_tools
+
 executor_tools = [
     list_experiments,
+    *yaml_builder_tools,   # generate_pod_delete_engines, merge_workflow_yaml, validate_workflow_yaml
     save_experiment,
     run_experiment,
 ]

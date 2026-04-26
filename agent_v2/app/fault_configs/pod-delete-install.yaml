@@ -1,0 +1,170 @@
+# Static template: install-chaos-faults
+# This template installs the pod-delete ChaosExperiment CRD into the cluster.
+# It is merged into the final Argo Workflow by merge_workflow_yaml().
+# DO NOT add dynamic placeholders here — this file is fixed across all experiments.
+
+name: install-chaos-faults
+inputs:
+  artifacts:
+    - name: pod-delete
+      path: /tmp/pod-delete.yaml
+      raw:
+        data: >
+          apiVersion: litmuschaos.io/v1alpha1
+
+          description:
+            message: |
+              Deletes a pod belonging to a deployment/statefulset/daemonset
+          kind: ChaosExperiment
+
+          metadata:
+            name: pod-delete
+            labels:
+              name: pod-delete
+              app.kubernetes.io/part-of: litmus
+              app.kubernetes.io/component: chaosexperiment
+              app.kubernetes.io/version: 3.24.0
+          spec:
+            definition:
+              scope: Namespaced
+              permissions:
+                - apiGroups:
+                    - ""
+                  resources:
+                    - pods
+                  verbs:
+                    - create
+                    - delete
+                    - get
+                    - list
+                    - patch
+                    - update
+                    - deletecollection
+                - apiGroups:
+                    - ""
+                  resources:
+                    - events
+                  verbs:
+                    - create
+                    - get
+                    - list
+                    - patch
+                    - update
+                - apiGroups:
+                    - ""
+                  resources:
+                    - configmaps
+                  verbs:
+                    - get
+                    - list
+                - apiGroups:
+                    - ""
+                  resources:
+                    - pods/log
+                  verbs:
+                    - get
+                    - list
+                    - watch
+                - apiGroups:
+                    - ""
+                  resources:
+                    - pods/exec
+                  verbs:
+                    - get
+                    - list
+                    - create
+                - apiGroups:
+                    - apps
+                  resources:
+                    - deployments
+                    - statefulsets
+                    - replicasets
+                    - daemonsets
+                  verbs:
+                    - list
+                    - get
+                - apiGroups:
+                    - apps.openshift.io
+                  resources:
+                    - deploymentconfigs
+                  verbs:
+                    - list
+                    - get
+                - apiGroups:
+                    - ""
+                  resources:
+                    - replicationcontrollers
+                  verbs:
+                    - get
+                    - list
+                - apiGroups:
+                    - argoproj.io
+                  resources:
+                    - rollouts
+                  verbs:
+                    - list
+                    - get
+                - apiGroups:
+                    - batch
+                  resources:
+                    - jobs
+                  verbs:
+                    - create
+                    - list
+                    - get
+                    - delete
+                    - deletecollection
+                - apiGroups:
+                    - litmuschaos.io
+                  resources:
+                    - chaosengines
+                    - chaosexperiments
+                    - chaosresults
+                  verbs:
+                    - create
+                    - list
+                    - get
+                    - patch
+                    - update
+                    - delete
+              image: docker.io/litmuschaos/go-runner:3.24.0
+              imagePullPolicy: Always
+              args:
+                - -c
+                - ./experiments -name pod-delete
+              command:
+                - /bin/bash
+              env:
+                - name: TOTAL_CHAOS_DURATION
+                  value: "60"
+                - name: RAMP_TIME
+                  value: ""
+                - name: FORCE
+                  value: "true"
+                - name: CHAOS_INTERVAL
+                  value: "5"
+                - name: PODS_AFFECTED_PERC
+                  value: ""
+                - name: TARGET_CONTAINER
+                  value: ""
+                - name: TARGET_PODS
+                  value: ""
+                - name: DEFAULT_HEALTH_CHECK
+                  value: "false"
+                - name: NODE_LABEL
+                  value: ""
+                - name: SEQUENCE
+                  value: parallel
+              labels:
+                name: pod-delete
+                app.kubernetes.io/part-of: litmus
+                app.kubernetes.io/component: experiment-job
+                app.kubernetes.io/version: 3.24.0
+container:
+  name: ""
+  image: docker.io/litmuschaos/k8s:2.11.0
+  command:
+    - sh
+    - -c
+  args:
+    - kubectl apply -f /tmp/ -n litmus && sleep 30
