@@ -1,21 +1,21 @@
-"""Planner Agent state definition for LangGraph."""
+"""Unified state definition for the Master Orchestrator."""
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 from typing_extensions import TypedDict
 
 from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage
 
 
-class PlannerState(TypedDict):
-    """State that flows through the Planner Agent LangGraph."""
+class ChaosState(TypedDict):
+    """Shared state for the entire Chaos Lifecycle (Plan -> Execute)."""
     messages: Annotated[list[BaseMessage], add_messages]
-    # Whether user has confirmed the final plan
+    
+    # Routing control
+    next_agent: Literal["planner", "executor", "end"]
+    
+    # State flags
     confirmed: bool
-
-class ExecutorState(TypedDict):
-    """State that flows through the Executor Agent LangGraph."""
-    messages: Annotated[list[BaseMessage], add_messages]
     completed: bool

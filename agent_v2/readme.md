@@ -1,62 +1,49 @@
-# Planner & Executor Agents (agent_v2) – Scalable Chaos Architecture
+# Chaos Master Orchestrator (agent_v2) – Unified Architecture
 
-I have successfully implemented a scalable, discovery-driven architecture for the **Planner** and **Executor** agents using **LangGraph**. This design decouples chaos fault knowledge from the LLM prompts, allowing the system to support 30+ faults with minimal token overhead and easy maintenance.
+I have successfully implemented the **Master Orchestrator** (Supervisor) pattern using **LangGraph**. This unified architecture merges the Planning and Execution phases into a single, intelligent state machine, providing a seamless end-to-end chaos engineering experience.
 
 ## What Was Accomplished
 
-### 1. Scalable Fault Registry
-- **Fault Registry ([fault_registry.json](file:///c:/Users/prems/Documents/Work/chaos_engineering/agent_v2/app/fault_registry.json))**: A single source of truth defining all supported faults (e.g., `pod-delete`, `pod-cpu-hog`), their descriptions, and parameter schemas.
-- **Dynamic Discovery Tools**:
-    - `get_fault_catalog`: Allows agents to see available faults.
-    - `get_fault_schema`: Allows agents to fetch parameters for a specific fault on-demand.
-- **Unified Generator**: `generate_chaos_engines` handles template rendering for any fault in the registry, replacing per-fault generator tools.
+### 1. Master Orchestrator (Supervisor)
+- **Supervisor Node**: An intelligent router that analyzes user messages and automatically switches between the **Planner** and the **Executor**.
+- **Unified Graph ([master.py](file:///c:/Users/prems/Documents/Work/chaos_engineering/agent_v2/app/graph/master.py))**: A single LangGraph that manages the entire lifecycle from discovery to execution.
+- **Unified State ([state.py](file:///c:/Users/prems/Documents/Work/chaos_engineering/agent_v2/app/graph/state.py))**: A shared `ChaosState` that maintains context and routing across both agents.
 
-### 2. Consolidated Prompts & Architecture
-- **Consolidated Prompts ([chaos_prompts.py](file:///c:/Users/prems/Documents/Work/chaos_engineering/agent_v2/app/prompts/chaos_prompts.py))**: Merged Planner and Executor instructions into a single file for better maintainability.
-- **Shared Cleanup**: Renamed `pod-delete-cleanup.yaml` to `chaos-cleanup.yaml` to reflect its role as a global resource for all experiment types.
+### 2. Scalable Fault Registry
+- **Fault Registry ([fault_registry.json](file:///c:/Users/prems/Documents/Work/chaos_engineering/agent_v2/app/fault_registry.json))**: A single source of truth for all supported faults.
+- **Discovery Tools**: `get_fault_catalog` and `get_fault_schema` for on-demand knowledge fetching.
+- **Unified Generator**: `generate_chaos_engines` handles template rendering for any fault in the registry.
 
-### 3. LangGraph Orchestration
-- **Planner Agent**: Uses discovery tools to design experiments based on user goals, identifies target services, and fine-tunes parameters.
-- **Executor Agent**: Receives the plan, calls the unified generator, merges the workflow, validates, saves, and executes the experiment.
-- **Human-in-the-Loop**: Integrated `interrupt_before` to allow user validation of the execution plan before handoff to the executor.
+### 3. Simplified API Surface
+- **Unified `/chat` Endpoint**: A single endpoint for both planning and execution. The AI now transitions to execution naturally when you say "Go", "Run it", or "Approved".
+- **Consolidated Prompts ([chaos_prompts.py](file:///c:/Users/prems/Documents/Work/chaos_engineering/agent_v2/app/prompts/chaos_prompts.py))**: All agent instructions (Supervisor, Planner, Executor) are now managed in a single file.
 
 ## Visualizing the Flow
 
 ```mermaid
 graph TD
-    A[Start: User Input] --> B(Planner: analyzer_node)
-    B --> C(Planner: Discovery & Services)
-    C --> D(Planner: Fine-tune & Summary)
+    A[Start: User Input] --> B(Supervisor: Router)
+    B -- Planning Intent --> C(Planner Agent)
+    B -- Execution Intent --> D(Executor Agent)
     
-    D -.-> E{Human in the Loop Pause}
-    E -. POST /chat Approval .-> F(Planner: handoff)
-    F --> G(Executor: generate_chaos_engines)
-    G --> H(Executor: merge_workflow_yaml)
-    H --> I(Executor: validate_workflow_yaml)
-    I --> J(Executor: save_experiment)
-    J --> K(Executor: run_experiment)
-    K --> End
+    C --> E{Human in the Loop Pause}
+    E -. Approval/Feedback .-> B
+    
+    D --> F(Success/Completion)
+    F --> End
 ```
 
 ## How to Add a New Chaos Fault
 
-Adding a new fault is now a data-driven process that requires **zero code changes** to the agents or prompts.
+Adding a new fault is a data-driven process with **zero code changes**:
 
-1. **Update Registry**: Add a new entry to [fault_registry.json](file:///c:/Users/prems/Documents/Work/chaos_engineering/agent_v2/app/fault_registry.json) with:
-   - `description`: What the fault does.
-   - `template`: Name of the Jinja2 engine template.
-   - `install_yaml`: Name of the fault installation YAML.
-   - `parameters`: A dictionary of all parameters (type, required, default, description).
-
-2. **Add Configuration Files**: Place the following in `app/fault_configs/`:
-   - The engine template (e.g., `new-fault-engine.yaml.j2`).
-   - The installation YAML (e.g., `new-fault-install.yaml`).
-
-3. **That's it!** The Planner will automatically discover the new fault via `get_fault_catalog` and the Executor will be able to generate it using the unified `generate_chaos_engines` tool.
+1. **Update Registry**: Add an entry to [fault_registry.json](file:///c:/Users/prems/Documents/Work/chaos_engineering/agent_v2/app/fault_registry.json).
+2. **Add Configs**: Place the `.yaml.j2` template and `install.yaml` in `app/fault_configs/`.
+3. **Automated Support**: The Planner will discover it, and the Executor will be able to generate it immediately.
 
 ## Running the Application Locally
 
-1. **Setup Environment**:
+1. **Setup**:
    ```bash
    cd agent_v2
    python -m venv venv
@@ -64,16 +51,17 @@ Adding a new fault is now a data-driven process that requires **zero code change
    pip install -r requirements.txt
    ```
 
-2. **Start Service**:
+2. **Start**:
    ```bash
    uvicorn app.main:app --reload
    ```
 
-3. **Test with API**:
-   Use `/docs` or send a POST request to `/chat`:
+3. **Test**:
+   Send a POST request to `/chat`:
    ```json
    {
-     "thread_id": "test-123",
-     "message": "I want to test pod resource hogs"
+     "thread_id": "chaos-test-1",
+     "message": "I want to test pod-delete on backend."
    }
    ```
+   Once the plan is ready, simply reply "Approved" or "Run it" in the same thread to trigger execution!

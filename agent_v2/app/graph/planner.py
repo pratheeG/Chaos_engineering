@@ -18,7 +18,7 @@ from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
 
 from config import settings
-from graph.state import PlannerState
+from graph.state import ChaosState
 from prompts.chaos_prompts import PLANNER_SYSTEM_PROMPT
 from tools.litmus import planner_tools
 
@@ -56,7 +56,7 @@ def _get_llm():
 
 # ── Node functions ────────────────────────────────────────────────────────────
 
-def _call_planner(state: PlannerState) -> dict:
+def _call_planner(state: ChaosState) -> dict:
     """Node: invoke the LLM with tool bindings."""
     messages = state["messages"]
 
@@ -67,7 +67,7 @@ def _call_planner(state: PlannerState) -> dict:
     return {"messages": [response]}
 
 
-def _human_feedback(state: PlannerState) -> dict:
+def _human_feedback(state: ChaosState) -> dict:
     """No-op node – execution is interrupted HERE to wait for user input.
     Once the user provides input via /chat, the graph resumes from this node.
     """
@@ -76,7 +76,7 @@ def _human_feedback(state: PlannerState) -> dict:
 
 # ── Routing ───────────────────────────────────────────────────────────────────
 
-def _should_continue(state: PlannerState) -> str:
+def _should_continue(state: ChaosState) -> str:
     """After planner responds: route to tools, human_feedback pause, or END."""
     last = state["messages"][-1]
 
@@ -94,7 +94,7 @@ def _should_continue(state: PlannerState) -> str:
     return "human_feedback"
 
 
-def _after_feedback(state: PlannerState) -> str:
+def _after_feedback(state: ChaosState) -> str:
     """After user provides feedback, always route back to the planner."""
     return "planner"
 
@@ -108,7 +108,7 @@ _llm_with_tools = _llm.bind_tools(planner_tools)
 
 def build_graph():
     """Construct and compile the Planner LangGraph with memory checkpointing."""
-    graph = StateGraph(PlannerState)
+    graph = StateGraph(ChaosState)
 
     # Nodes
     graph.add_node("planner", _call_planner)

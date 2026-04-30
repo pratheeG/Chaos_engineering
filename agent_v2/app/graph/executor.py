@@ -13,7 +13,7 @@ from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
 
 from config import settings
-from graph.state import ExecutorState
+from graph.state import ChaosState
 from prompts.chaos_prompts import EXECUTOR_SYSTEM_PROMPT
 from tools.litmus import executor_tools
 from tools.config_tool import config_tools
@@ -51,7 +51,7 @@ def _get_llm():
         raise ValueError(f"Unsupported LLM provider: {provider}. Use 'openai', 'groq', or 'ollama'.")
 
 
-def _call_executor(state: ExecutorState) -> dict:
+def _call_executor(state: ChaosState) -> dict:
     """Node: invoke the LLM with tool bindings."""
     messages = state["messages"]
 
@@ -63,7 +63,7 @@ def _call_executor(state: ExecutorState) -> dict:
     return {"messages": [response]}
 
 
-def _should_continue(state: ExecutorState) -> str:
+def _should_continue(state: ChaosState) -> str:
     """After executor responds: route to tools or END."""
     last = state["messages"][-1]
 
@@ -83,7 +83,7 @@ _llm_with_tools = _llm.bind_tools(all_executor_tools)
 
 def build_executor_graph():
     """Construct and compile the Executor LangGraph with memory checkpointing."""
-    graph = StateGraph(ExecutorState)
+    graph = StateGraph(ChaosState)
 
     # Nodes
     graph.add_node("executor", _call_executor)

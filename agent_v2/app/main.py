@@ -1,9 +1,6 @@
-"""Planner Agent FastAPI application.
+"""Master Orchestrator FastAPI application.
 
-Endpoints:
-  POST /chat      – Send a message or resume after human-feedback pause.
-  GET  /state/{thread_id} – Inspect the current graph state for a thread.
-  DELETE /state/{thread_id} – Clear / reset a conversation thread.
+Provides a unified interface for Chaos Planning and Execution.
 """
 
 from __future__ import annotations
@@ -11,29 +8,26 @@ from __future__ import annotations
 import sys
 import os
 
-# Add the app directory to the path so absolute-style imports work
-# (same convention as agent/app/main.py running with `python main.py` or uvicorn from app/)
+# Add the app directory to the path
 sys.path.insert(0, os.path.dirname(__file__))
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 
-from graph import build_graph
-from graph.executor import build_executor_graph
+from graph.master import build_master_graph
 from config import settings
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="Chaos Planner Agent",
-    description="LangGraph-powered Planner Agent for designing LitmusChaos experiments.",
-    version="2.0.0",
+    title="Chaos Master Orchestrator",
+    description="Unified LangGraph agent for Chaos Engineering (Planning + Execution).",
+    version="3.0.0",
 )
 
-# Single compiled graph instance with MemorySaver checkpointing
-_planner = build_graph()
-_executor = build_executor_graph()
+# Single unified graph instance
+_master = build_master_graph()
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -56,7 +50,6 @@ def _last_ai_message(state_values: dict) -> str:
         if isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", None):
             content = msg.content
             if isinstance(content, list):
-                # Handle structured content array (e.g., Anthropic)
                 content = " ".join([c.get("text", "") for c in content if isinstance(c, dict) and "text" in c])
             if content:
                 return str(content)
@@ -67,98 +60,62 @@ def _last_ai_message(state_values: dict) -> str:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@app.post("/chat/plan")
+@app.post("/chat")
 async def chat(request: ChatRequest):
-    """Send a user message to the Planner Agent."""
+    """Unified endpoint for the entire Chaos Lifecycle."""
     config = _config(request.thread_id)
 
     try:
-        current = _planner.get_state(config)
-        paused = len(current.next) > 0  # graph is frozen waiting for human_feedback
+        current = _master.get_state(config)
+        paused = len(current.next) > 0
 
         if paused:
-            # Append the user's feedback and resume
-            _planner.update_state(config, {"messages": [HumanMessage(content=request.message)]})
-            gen = _planner.stream(None, config, stream_mode="values")
+            # Resume from human_feedback interrupt
+            _master.update_state(config, {"messages": [HumanMessage(content=request.message)]})
+            gen = _master.stream(None, config, stream_mode="values")
         else:
             # Brand-new turn
-            inputs = {"messages": [HumanMessage(content=request.message)], "confirmed": False}
-            gen = _planner.stream(inputs, config, stream_mode="values")
-
-        last_values = None
-        for state_values in gen:
-            last_values = state_values
-
-        latest = _planner.get_state(config)
-        waiting = len(latest.next) > 0
-        planner_done = len(latest.next) == 0 and bool(latest.values)
-
-        state_to_check = last_values or latest.values or {}
-
-        return {
-            "thread_id": request.thread_id,
-            "status": "waiting_for_user" if waiting else "completed",
-            "show_execute_button": planner_done,
-            "pending_nodes": list(latest.next),
-            "message": _last_ai_message(state_to_check),
-        }
-
-    except Exception as exc:
-        print("=================================")
-        print('Error planning: ', exc)
-        print("=================================")
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@app.post("/chat/execute")
-async def execute(request: ChatRequest):
-    """Trigger the Executor Agent to run the designed plan."""
-    config = _config(request.thread_id)
-
-    try:
-        executor_state = _executor.get_state(config)
-            
-        if not executor_state.values:
-            # Executor is starting up. Seed it with Planner's final context
-            planner_state = _planner.get_state(config)
-            plan_context = _last_ai_message(planner_state.values) if planner_state.values else "No previous plan state found."
-
-            initial_prompt = f"Here is the finalized plan from the Planner:\n\n{plan_context}\n\nUser request: {request.message}"
-            inputs = {"messages": [HumanMessage(content=initial_prompt)], "completed": False}
-            gen = _executor.stream(inputs, config, stream_mode="values")
-        else:
-            # Executor evaluating an ongoing conversation
             inputs = {"messages": [HumanMessage(content=request.message)]}
-            # Stream directly with inputs so the graph processes it from the beginning node
-            gen = _executor.stream(inputs, config, stream_mode="values")
+            gen = _master.stream(inputs, config, stream_mode="values")
 
         last_values = None
         for state_values in gen:
             last_values = state_values
 
-        latest = _executor.get_state(config)
+        latest = _master.get_state(config)
         waiting = len(latest.next) > 0
-
+        
         state_to_check = last_values or latest.values or {}
-
+        active_nodes = list(latest.next)
+        
+        # If the graph is waiting for human feedback, the next agent will always be the supervisor
+        if "human_feedback" in active_nodes:
+            current_agent = "supervisor"
+        else:
+            current_agent = state_to_check.get("next_agent", "supervisor")
+        
         return {
             "thread_id": request.thread_id,
             "status": "waiting_for_user" if waiting else "completed",
             "message": _last_ai_message(state_to_check),
+            "active_agent": current_agent,
+            "pending_nodes": active_nodes,
         }
 
     except Exception as exc:
         print("=================================")
-        print('Error executing plan: ', exc)
+        print('Error in Chaos Orchestrator: ', exc)
         print("=================================")
         raise HTTPException(status_code=500, detail=str(exc))
 
+
+# ── State Management ──────────────────────────────────────────────────────────
 
 @app.get("/state/{thread_id}")
 async def get_state(thread_id: str):
-    """Inspect the current state of a planning thread."""
+    """Inspect the current state of a thread."""
     config = _config(thread_id)
-    state = _planner.get_state(config)
+    state = _master.get_state(config)
 
     if not state.values:
         return {"thread_id": thread_id, "status": "not_found", "state": None}
@@ -167,23 +124,22 @@ async def get_state(thread_id: str):
         "thread_id": thread_id,
         "status": "waiting_for_user" if len(state.next) > 0 else "completed",
         "pending_nodes": list(state.next),
+        "active_agent": state.values.get("next_agent", "supervisor"),
         "message_count": len(state.values.get("messages", [])),
-        "confirmed": state.values.get("confirmed", False),
     }
 
 
 @app.delete("/state/{thread_id}")
 async def reset_state(thread_id: str):
     """Reset / clear a conversation thread."""
-    # MemorySaver doesn't have an explicit delete; we overwrite with empty state.
     config = _config(thread_id)
     try:
-        _planner.update_state(config, {"messages": [], "confirmed": False})
+        _master.update_state(config, {"messages": [], "confirmed": False, "completed": False})
     except Exception:
-        pass  # Thread may not exist yet
+        pass
     return {"thread_id": thread_id, "status": "reset"}
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "llm_provider": settings.llm_provider}
+    return {"status": "ok", "llm_provider": settings.llm_provider, "orchestrator": "v3-master"}
