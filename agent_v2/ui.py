@@ -16,7 +16,28 @@ if "thread_id" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "current_agent" not in st.session_state:
-    st.session_state.current_agent = "Supervisor"
+    st.session_state.current_agent = "Agent"
+
+# Handshake: Sync agent status with backend for the current thread
+def sync_agent_status():
+    try:
+        resp = requests.get(f"{API_BASE}/state/{st.session_state.thread_id}")
+        if resp.status_code == 200:
+            data = resp.json()
+            agent_id = data.get("active_agent", "supervisor")
+            agent_map = {
+                "supervisor": "Agent",
+                "planner": "Agent",
+                "executor": "Agent"
+            }
+            st.session_state.current_agent = agent_map.get(agent_id, "Agent")
+    except:
+        pass
+
+# Only run handshake if we haven't already or thread changed
+if "last_synced_thread" not in st.session_state or st.session_state.last_synced_thread != st.session_state.thread_id:
+    sync_agent_status()
+    st.session_state.last_synced_thread = st.session_state.thread_id
 
 # Function to render messages
 def render_chat():
@@ -39,11 +60,10 @@ def send_to_orchestrator(user_prompt: str):
     approval_keywords = ["yes", "proceed", "run", "execute", "go"]
     is_approval = any(k in user_prompt.lower() for k in approval_keywords)
     
-    if is_approval and st.session_state.current_agent == "Planner Agent":
-        st.session_state.current_agent = "Executor Agent"
-        status_msg = f"**Planner Agent** has handed over... **Executor Agent** is running..."
+    if is_approval and st.session_state.current_agent == "Agent":
+        status_msg = "Agent is transitioning to execution... analysing your request..."
     else:
-        status_msg = f"**{st.session_state.current_agent}** is thinking..."
+        status_msg = "Agent is analysing your request..."
     
     with st.spinner(status_msg):
         try:
@@ -79,7 +99,7 @@ if prompt := st.chat_input("Ask a question or describe a chaos goal..."):
 # Sidebar
 with st.sidebar:
     st.header("Session Settings")
-    st.write(f"**Current Agent:** `{st.session_state.current_agent}`")
+    st.write(f"**Status:** `{st.session_state.current_agent} is Active`")
     st.write(f"**Thread ID:** `{st.session_state.thread_id}`")
     
     if st.button("Clear Conversation"):
@@ -89,7 +109,7 @@ with st.sidebar:
             pass
         st.session_state.thread_id = str(uuid.uuid4())
         st.session_state.messages = []
-        st.session_state.current_agent = "Supervisor"
+        st.session_state.current_agent = "Agent"
         st.rerun()
     
     st.divider()

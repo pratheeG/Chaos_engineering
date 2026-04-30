@@ -24,5 +24,18 @@
       "cpu_load":        {"type": "str", "required": false, "default": "100", "description": "CPU load % per core"},
       "probe_name":      {"type": "str", "required": false, "default": "",    "description": "Probe name or empty"}
     }
+  },
+  "pod-memory-hog": {
+    "description": "Stresses memory on a pod to test OOM handling and eviction.",
+    "template": "pod-memory-hog-engine.yaml.j2",
+    "install_yaml": "pod-memory-hog-install.yaml",
+    "parameters": {
+      "chaos_duration": {"type": "str", "required": true,  "description": "Fault duration in seconds"},
+      "target_namespace":{"type": "str", "required": true,  "description": "Kubernetes namespace"},
+      "app_label":       {"type": "str", "required": true,  "description": "Label selector e.g. app=foo"},
+      "target_container":{"type": "str", "required": true,  "description": "Container name to target"},
+      "memory_consumption_mib": {"type": "str", "required": false, "default": "500", "description": "Memory to consume in MiB"},
+      "probe_name":      {"type": "str", "required": false, "default": "",    "description": "Probe name or empty"}
+    }
   }
 }

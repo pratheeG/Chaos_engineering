@@ -49,28 +49,52 @@ def supervisor_node(state: ChaosState) -> dict:
     # For now, let's use an LLM to be robust to natural language
     llm = _get_llm()
     
-    # We strip tool calls and results to avoid Groq/OpenAI errors about missing tool definitions
-    # and to save tokens, since the supervisor only needs the text intent.
+    # Filter out ALL tool-related messages and only keep user/assistant text
     clean_messages = []
-    for msg in messages[-5:]: # Use a bit more context
-        if hasattr(msg, "tool_calls") and msg.tool_calls:
-            # Keep the message but clear the tool calls for the supervisor's view
-            from langchain_core.messages import AIMessage
-            clean_messages.append(AIMessage(content=msg.content))
-        elif msg.type == "tool":
-            # Skip tool result messages for the supervisor
+    # Only look at the last 10 messages for context, but strictly filter
+    for msg in messages[-10:]:
+        # Skip tool messages and AI messages that have tool calls
+        if msg.type == "tool" or (hasattr(msg, "tool_calls") and msg.tool_calls):
             continue
-        else:
-            clean_messages.append(msg)
+        
+        # Also clean content to remove any tool-like JSON blocks that might confuse the model
+        content = msg.content
+        if isinstance(content, str) and '"arguments":' in content and '"name":' in content:
+            continue
             
-    system_msg = SystemMessage(content=SUPERVISOR_SYSTEM_PROMPT + "\nRespond with ONLY one word: 'planner' or 'executor'.")
+        clean_messages.append(msg)
+    
+    # Ensure we don't have an empty list, but keep it minimal
+    clean_messages = clean_messages[-5:]
+            
+    # Get supported faults from registry
+    import json
+    try:
+        with open("app/fault_registry.json", "r") as f:
+            registry = json.load(f)
+            fault_list = ", ".join(registry.keys())
+    except:
+        fault_list = "pod-delete, pod-cpu-hog, pod-memory-hog"
+            
+    system_msg_content = SUPERVISOR_SYSTEM_PROMPT.format(supported_faults=fault_list)
+    system_msg = SystemMessage(content=system_msg_content + "\nRespond with 'planner', 'executor', or the polite refusal message.")
+    
     response = llm.invoke([system_msg] + clean_messages)
     
     decision = response.content.lower().strip().replace("'", "").replace('"', "")
     
-    if "executor" in decision:
+    if "executor" == decision:
         return {"next_agent": "executor"}
-    return {"next_agent": "planner"}
+    elif "planner" == decision:
+        return {"next_agent": "planner"}
+    else:
+        # It's a refusal message or something else
+        # Append the refusal message to the conversation and go to human_feedback
+        from langchain_core.messages import AIMessage
+        return {
+            "messages": [AIMessage(content=response.content)],
+            "next_agent": "human_feedback"
+        }
 
 def planner_node(state: ChaosState) -> dict:
     """Planner Agent: Designs the experiment."""
@@ -145,7 +169,7 @@ def build_master_graph():
     builder.add_conditional_edges(
         "supervisor",
         route_from_supervisor,
-        {"planner": "planner", "executor": "executor"}
+        {"planner": "planner", "executor": "executor", "human_feedback": "human_feedback"}
     )
     
     # Planner Loop

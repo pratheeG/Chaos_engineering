@@ -1,0 +1,57 @@
+# Static template: install-chaos-faults (pod-memory-hog)
+# This template installs the pod-memory-hog ChaosExperiment CRD into the cluster.
+# It is merged into the final Argo Workflow by merge_workflow_yaml().
+
+name: install-chaos-faults-memory-hog
+inputs:
+  artifacts:
+    - name: pod-memory-hog
+      path: /tmp/pod-memory-hog.yaml
+      raw:
+        data: >
+          apiVersion: litmuschaos.io/v1alpha1
+          description:
+            message: |
+              Injects memory stress on a pod belonging to a deployment/statefulset/daemonset
+          kind: ChaosExperiment
+          metadata:
+            name: pod-memory-hog
+            labels:
+              name: pod-memory-hog
+              app.kubernetes.io/part-of: litmus
+              app.kubernetes.io/component: chaosexperiment
+              app.kubernetes.io/version: 3.24.0
+          spec:
+            definition:
+              scope: Namespaced
+              permissions:
+                - apiGroups: [""]
+                  resources: ["pods", "events", "configmaps", "pods/log", "pods/exec"]
+                  verbs: ["create", "delete", "get", "list", "patch", "update", "deletecollection", "watch"]
+                - apiGroups: ["apps"]
+                  resources: ["deployments", "statefulsets", "replicasets", "daemonsets"]
+                  verbs: ["list", "get"]
+                - apiGroups: ["batch"]
+                  resources: ["jobs"]
+                  verbs: ["create", "list", "get", "delete", "deletecollection"]
+                - apiGroups: ["litmuschaos.io"]
+                  resources: ["chaosengines", "chaosexperiments", "chaosresults"]
+                  verbs: ["create", "list", "get", "patch", "update", "delete"]
+              image: docker.io/litmuschaos/go-runner:3.24.0
+              imagePullPolicy: Always
+              args: ["-c", "./experiments -name pod-memory-hog"]
+              command: ["/bin/bash"]
+              env:
+                - name: TOTAL_CHAOS_DURATION
+                  value: "60"
+                - name: MEMORY_CONSUMPTION
+                  value: "500"
+                - name: NUMBER_OF_WORKERS
+                  value: "1"
+              labels:
+                name: pod-memory-hog
+container:
+  name: ""
+  image: docker.io/litmuschaos/k8s:2.11.0
+  command: ["sh", "-c"]
+  args: ["kubectl apply -f /tmp/pod-memory-hog.yaml -n litmus && sleep 30"]

@@ -120,11 +120,17 @@ async def get_state(thread_id: str):
     if not state.values:
         return {"thread_id": thread_id, "status": "not_found", "state": None}
 
+    active_nodes = list(state.next)
+    if "human_feedback" in active_nodes:
+        active_agent = "supervisor"
+    else:
+        active_agent = state.values.get("next_agent", "supervisor")
+
     return {
         "thread_id": thread_id,
-        "status": "waiting_for_user" if len(state.next) > 0 else "completed",
-        "pending_nodes": list(state.next),
-        "active_agent": state.values.get("next_agent", "supervisor"),
+        "status": "waiting_for_user" if len(active_nodes) > 0 else "completed",
+        "pending_nodes": active_nodes,
+        "active_agent": active_agent,
         "message_count": len(state.values.get("messages", [])),
     }
 
