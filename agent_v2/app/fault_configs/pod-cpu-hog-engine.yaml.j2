@@ -1,0 +1,71 @@
+# Jinja2 template: pod-cpu-hog ChaosEngine step
+# Rendered once per target deployment by generate_pod_cpu_hog_engines().
+#
+# Required variables:
+#   engine_id        - short unique suffix, e.g. "r01", "r02"
+#   target_namespace - Kubernetes namespace of the target app
+#   app_label        - Kubernetes label selector, e.g. "app=chaos-backend"
+#   target_container - Name of the container to target
+#   chaos_duration   - Duration in seconds as a string, e.g. "60"
+#   cpu_cores        - Number of CPU cores to consume, e.g. "1"
+#   cpu_load         - CPU load percentage per core, e.g. "100"
+#   probe_ref        - JSON probe annotation, e.g. '[{"name":"my-probe","mode":"Continuous"}]'
+#                      Pass '[]' for no probes.
+
+- name: pod-cpu-hog-{{ engine_id }}
+  inputs:
+    artifacts:
+      - name: pod-cpu-hog-{{ engine_id }}
+        path: /tmp/chaosengine-pod-cpu-hog-{{ engine_id }}.yaml
+        raw:
+          data: |
+            apiVersion: litmuschaos.io/v1alpha1
+            kind: ChaosEngine
+            metadata:
+              namespace: "{{"{{"}}workflow.parameters.adminModeNamespace{{"}}"}}"
+              labels:
+                workflow_run_id: "{{"{{"}} workflow.uid {{"}}"}}"
+              annotations:
+                probeRef: '{{ probe_ref }}'
+              generateName: pod-cpu-hog-{{ engine_id }}-
+            spec:
+              appinfo:
+                appns: {{ target_namespace }}
+                applabel: {{ app_label }}
+                appkind: deployment
+              engineState: active
+              chaosServiceAccount: litmus-admin
+              experiments:
+                - name: pod-cpu-hog
+                  spec:
+                    components:
+                      env:
+                        - name: TOTAL_CHAOS_DURATION
+                          value: "{{ chaos_duration }}"
+                        - name: RAMP_TIME
+                          value: ""
+                        - name: CPU_CORES
+                          value: "{{ cpu_cores }}"
+                        - name: CPU_LOAD
+                          value: "{{ cpu_load }}"
+                        - name: PODS_AFFECTED_PERC
+                          value: ""
+                        - name: TARGET_CONTAINER
+                          value: "{{ target_container }}"
+                        - name: TARGET_PODS
+                          value: ""
+                        - name: DEFAULT_HEALTH_CHECK
+                          value: "false"
+                        - name: NODE_LABEL
+                          value: ""
+                        - name: SEQUENCE
+                          value: parallel
+  metadata:
+    labels:
+      weight: "10"
+  container:
+    name: ""
+    image: docker.io/litmuschaos/litmus-checker:2.11.0
+    args:
+      - -file=/tmp/chaosengine-pod-cpu-hog-{{ engine_id }}.yaml
+      - -saveName=/tmp/engine-name

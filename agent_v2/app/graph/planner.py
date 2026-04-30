@@ -19,7 +19,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from config import settings
 from graph.state import PlannerState
-from prompts.system import PLANNER_SYSTEM_PROMPT
+from prompts.chaos_prompts import PLANNER_SYSTEM_PROMPT
 from tools.litmus import planner_tools
 
 

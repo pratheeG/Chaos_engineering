@@ -14,7 +14,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from config import settings
 from graph.state import ExecutorState
-from prompts.executor_prompt import EXECUTOR_SYSTEM_PROMPT
+from prompts.chaos_prompts import EXECUTOR_SYSTEM_PROMPT
 from tools.litmus import executor_tools
 from tools.config_tool import config_tools
 

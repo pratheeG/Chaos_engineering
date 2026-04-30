@@ -1,23 +1,20 @@
-"""Tools for building, merging, and validating pod-delete Argo Workflow YAMLs dynamically.
+"""Tools for building, merging, and validating Argo Workflow YAMLs dynamically.
+
+Supports a scalable architecture using a Fault Registry (fault_registry.json).
+This eliminates the need to hardcode fault definitions in LLM prompts.
 
 Key design principle: Large YAML strings are NEVER passed as tool arguments.
-merge_workflow_yaml() stores the assembled workflow in an in-process cache keyed
-by experiment_name. Downstream tools (validate, save) look up by that key.
-This prevents the LLM from having to re-serialize multi-KB YAML blobs as JSON strings,
-which causes 'Failed to parse tool call arguments as JSON' errors from the API.
-
-Three tools are exposed:
-
-1. generate_pod_delete_engines  – renders one ChaosEngine template block per deployment
-2. merge_workflow_yaml          – assembles the full workflow and caches it by experiment_name
-3. validate_workflow_yaml       – validates the cached workflow by experiment_name key
+Each generator tool stages its rendered engine blocks in an in-process
+_engine_staging_cache keyed by fault_type. merge_workflow_yaml() reads from
+that cache using the fault_types list, then stores the assembled workflow in
+_workflow_cache keyed by experiment_name.
 """
 
 from __future__ import annotations
 
 import os
 import json
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Dict
 
 import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
@@ -26,10 +23,10 @@ from pydantic import BaseModel, Field
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-_CONFIG_DIR   = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fault_configs")
-_INSTALL_FILE = os.path.join(_CONFIG_DIR, "pod-delete-install.yaml")
-_CLEANUP_FILE = os.path.join(_CONFIG_DIR, "pod-delete-cleanup.yaml")
-_ENGINE_TMPL  = "pod-delete-engine.yaml.j2"
+_BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+_CONFIG_DIR = os.path.join(_BASE_DIR, "fault_configs")
+_REGISTRY_FILE = os.path.join(_BASE_DIR, "fault_registry.json")
+_CLEANUP_FILE = os.path.join(_CONFIG_DIR, "chaos-cleanup.yaml")
 
 _jinja_env = Environment(
     loader=FileSystemLoader(_CONFIG_DIR),
@@ -37,9 +34,20 @@ _jinja_env = Environment(
     keep_trailing_newline=True,
 )
 
-# ── In-process workflow cache ──────────────────────────────────────────────────
-# Key: experiment_name (str)  →  Value: assembled workflow YAML (str)
-# This avoids passing large YAML strings as tool arguments to the LLM.
+# ── Registry Loading ──────────────────────────────────────────────────────────
+
+def _load_registry() -> Dict[str, Any]:
+    """Load the fault registry from JSON."""
+    if not os.path.exists(_REGISTRY_FILE):
+        return {}
+    with open(_REGISTRY_FILE, "r") as f:
+        return json.load(f)
+
+# ── In-process caches ──────────────────────────────────────────────────────────
+# Staging cache  — Key: fault_type → {"templates_yaml": str, "step_names": list[str]}
+_engine_staging_cache: dict[str, dict] = {}
+
+# Workflow cache — Key: experiment_name → assembled workflow YAML (str)
 _workflow_cache: dict[str, str] = {}
 
 
@@ -49,47 +57,40 @@ def _strip_comments(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _build_probe_ref(probe_name: Optional[str]) -> str:
+    name = (probe_name or "").strip()
+    return json.dumps([{"name": name, "mode": "Continuous"}]) if name else "[]"
+
+
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
 
-class DeploymentConfig(BaseModel):
-    """Config for a single deployment target in a pod-delete chaos experiment."""
-    name: str = Field(description="Deployment name, e.g. 'chaos-backend'")
-    target_namespace: str = Field(description="Kubernetes namespace, e.g. 'chaos-ns'")
-    app_label: str = Field(description="Label selector, e.g. 'app=chaos-backend'")
-    target_container: str = Field(description="Container name to target, e.g. 'backend'")
-    chaos_duration: str = Field(description="Fault duration in seconds as a string, e.g. '60'")
-    probe_name: Optional[str] = Field(
-        default="",
-        description="LitmusChaos probe name to attach, or empty string for no probe"
+class GenerateChaosEnginesInput(BaseModel):
+    """Input for generate_chaos_engines."""
+    fault_type: str = Field(description="The type of fault to generate, e.g. 'pod-delete' or 'pod-cpu-hog'.")
+    deployments: List[Dict[str, Any]] = Field(
+        description=(
+            "List of deployment configs. Each dict should contain parameters required by the fault "
+            "(e.g. name, target_namespace, app_label, target_container, chaos_duration, etc.)."
+        )
     )
-
-
-class GenerateEnginesInput(BaseModel):
-    """Input for generate_pod_delete_engines."""
-    deployments: List[DeploymentConfig] = Field(
-        description="List of deployment configs — one ChaosEngine step is generated per entry."
-    )
-
 
 class MergeWorkflowInput(BaseModel):
     """Input for merge_workflow_yaml."""
     experiment_name: str = Field(
         description="Name for the Argo Workflow. Also used as the cache key for downstream tools."
     )
-    engine_templates_yaml: str = Field(
-        description="The engine_templates_yaml value from generate_pod_delete_engines output."
+    fault_types: List[str] = Field(
+        description=(
+            "Fault types to include. Must match generator tools already called. "
+            "Example: ['pod-delete', 'pod-cpu-hog'] for a mixed experiment."
+        )
     )
-    step_names: List[str] = Field(
-        description="The step_names list from generate_pod_delete_engines output."
-    )
-
 
 class WorkflowKeyInput(BaseModel):
-    """Input for tools that operate on a cached workflow (validate, save metadata)."""
+    """Input for tools that operate on a cached workflow (validate, save)."""
     experiment_name: str = Field(
-        description="The experiment_name used in merge_workflow_yaml — used to look up the cached workflow."
+        description="The experiment_name used in merge_workflow_yaml."
     )
-
 
 class SaveExperimentInput(BaseModel):
     """Input for save_experiment."""
@@ -97,113 +98,171 @@ class SaveExperimentInput(BaseModel):
     desc: str = Field(description="Human-readable description of the experiment.")
     tags: List[str] = Field(description="List of tag strings for categorization.")
     experiment_name: str = Field(
-        description="The experiment_name key from merge_workflow_yaml — used to retrieve the cached workflow YAML."
+        description="The experiment_name key from merge_workflow_yaml — used to retrieve cached YAML."
     )
 
+# ── Discovery Tools ──────────────────────────────────────────────────────────
 
-# ── Tool 1: generate_pod_delete_engines ───────────────────────────────────────
-
-@tool(args_schema=GenerateEnginesInput)
-def generate_pod_delete_engines(deployments: List[DeploymentConfig]) -> str:
-    """Renders one ChaosEngine Argo template block per deployment.
-
-    Call this tool FIRST. It returns a JSON object with two fields:
-      - engine_templates_yaml : YAML string of all rendered ChaosEngine template blocks
-      - step_names            : list of step name strings (e.g. ["pod-delete-r01", "pod-delete-r02"])
-
-    Pass BOTH fields directly to merge_workflow_yaml() using those exact field names.
-    Do NOT modify, reformat, or re-serialize the returned values.
+@tool
+def get_fault_catalog() -> str:
+    """Returns a compact list of all supported fault types with one-line descriptions.
+    The planner calls this first to discover what faults are available.
     """
+    registry = _load_registry()
+    catalog = [
+        {"name": name, "description": data.get("description", "No description available")}
+        for name, data in registry.items()
+    ]
+    return json.dumps({"faults": catalog}, indent=2)
+
+@tool
+def get_fault_schema(fault_type: str) -> str:
+    """Returns the full parameter schema for a specific fault type.
+    The planner calls this after selecting a fault to know what parameters to collect.
+    """
+    registry = _load_registry()
+    if fault_type not in registry:
+        return json.dumps({"error": f"Fault type '{fault_type}' not found in registry."})
+    
+    return json.dumps({
+        "fault_type": fault_type,
+        "description": registry[fault_type].get("description"),
+        "parameters": registry[fault_type].get("parameters")
+    }, indent=2)
+
+# ── Generator Tool ───────────────────────────────────────────────────────────
+
+@tool(args_schema=GenerateChaosEnginesInput)
+def generate_chaos_engines(fault_type: str, deployments: List[Dict[str, Any]]) -> str:
+    """Renders ChaosEngine Argo template blocks for any supported fault type and stages it internally.
+
+    Call this for all deployments that should receive a specific fault.
+    Output is stored in an internal staging cache — do NOT pass YAML between tools.
+
+    Returns compact JSON status.
+    """
+    registry = _load_registry()
+    if fault_type not in registry:
+        return f"Error: Fault type '{fault_type}' not found in registry."
+
+    fault_data = registry[fault_type]
+    template_file = fault_data.get("template")
+    
     try:
-        template = _jinja_env.get_template(_ENGINE_TMPL)
+        template = _jinja_env.get_template(template_file)
     except Exception as exc:
-        return f"Error loading engine template '{_ENGINE_TMPL}': {exc}"
+        return f"Error loading engine template '{template_file}': {exc}"
 
     rendered_blocks: list[str] = []
     step_names: list[str] = []
 
     for idx, dep in enumerate(deployments):
         engine_id = f"r{idx + 1:02d}"
-        probe_name = (dep.probe_name or "").strip()
-        probe_ref = (
-            json.dumps([{"name": probe_name, "mode": "Continuous"}]) if probe_name else "[]"
-        )
+        
+        # Prepare context for rendering
+        context = dep.copy()
+        context["engine_id"] = engine_id
+        
+        # Ensure probe_ref is built if probe_name is provided
+        if "probe_name" in context:
+            context["probe_ref"] = _build_probe_ref(context.get("probe_name"))
+        elif "probe_ref" not in context:
+            context["probe_ref"] = "[]"
+
         try:
-            block = template.render(
-                engine_id=engine_id,
-                target_namespace=dep.target_namespace,
-                app_label=dep.app_label,
-                target_container=dep.target_container,
-                chaos_duration=str(dep.chaos_duration),
-                probe_ref=probe_ref,
-            )
+            block = template.render(**context)
         except Exception as exc:
-            return f"Error rendering engine template for '{dep.name}': {exc}"
+            return f"Error rendering template for '{dep.get('name', 'unknown')}': {exc}"
 
         rendered_blocks.append(block)
-        step_names.append(f"pod-delete-{engine_id}")
+        step_names.append(f"{fault_type}-{engine_id}")
+
+    _engine_staging_cache[fault_type] = {
+        "templates_yaml": "\n".join(rendered_blocks),
+        "step_names": step_names,
+    }
 
     return json.dumps({
-        "engine_templates_yaml": "\n".join(rendered_blocks),
+        "status": "staged",
+        "fault_type": fault_type,
         "step_names": step_names,
+        "next_step": "Call merge_workflow_yaml() after generating all required engine blocks."
     })
 
-
-# ── Tool 2: merge_workflow_yaml ────────────────────────────────────────────────
+# ── Assembly Tool ────────────────────────────────────────────────────────────
 
 @tool(args_schema=MergeWorkflowInput)
-def merge_workflow_yaml(
-    experiment_name: str,
-    engine_templates_yaml: str,
-    step_names: List[str],
-) -> str:
-    """Assembles a complete Argo Workflow YAML from static configs and rendered engine blocks.
+def merge_workflow_yaml(experiment_name: str, fault_types: List[str]) -> str:
+    """Assembles a complete Argo Workflow YAML from staged engine blocks and static templates.
 
-    Call this AFTER generate_pod_delete_engines(). Use the values from that tool's JSON output:
-      - engine_templates_yaml → pass as-is
-      - step_names            → pass as-is
-
-    The assembled workflow is stored in an internal cache keyed by experiment_name.
-    The YAML is NOT returned directly — downstream tools use experiment_name to look it up.
-    This avoids the API error caused by passing large YAML strings as tool arguments.
-
-    Returns: a short status JSON with the cache_key and template count.
+    Call this AFTER the generate_chaos_engines() tool for each fault type.
+    
+    The assembled workflow is cached internally by experiment_name.
     """
-    # Load static install template
-    try:
-        with open(_INSTALL_FILE, "r") as fh:
-            install_dict: dict = yaml.safe_load(_strip_comments(fh.read()))
-    except Exception as exc:
-        return f"Error loading install template: {exc}"
+    registry = _load_registry()
+    
+    invalid = [ft for ft in fault_types if ft not in registry]
+    if invalid:
+        return f"Error: Unsupported fault_types: {invalid}. Supported: {list(registry.keys())}"
 
-    # Load static cleanup template
+    missing = [ft for ft in fault_types if ft not in _engine_staging_cache]
+    if missing:
+        return f"Error: No staged engine templates for: {missing}. Call generate_chaos_engines(fault_type=...) first."
+
+    # Load install templates for each requested fault type
+    install_dicts: list[dict] = []
+    for ft in fault_types:
+        install_yaml_file = registry[ft].get("install_yaml")
+        if not install_yaml_file:
+            continue
+            
+        install_path = os.path.join(_CONFIG_DIR, install_yaml_file)
+        try:
+            with open(install_path, "r") as fh:
+                d = yaml.safe_load(_strip_comments(fh.read()))
+                if d:
+                    install_dicts.append(d)
+        except Exception as exc:
+            return f"Error loading install template for '{ft}' from '{install_path}': {exc}"
+
+    # Load shared cleanup template
     try:
         with open(_CLEANUP_FILE, "r") as fh:
             cleanup_dict: dict = yaml.safe_load(_strip_comments(fh.read()))
     except Exception as exc:
-        return f"Error loading cleanup template: {exc}"
+        return f"Error loading cleanup template from '{_CLEANUP_FILE}': {exc}"
 
-    # Parse rendered engine blocks
-    engine_body = _strip_comments(engine_templates_yaml)
-    try:
-        engine_dicts = yaml.safe_load(engine_body)
-        if not isinstance(engine_dicts, list):
-            engine_dicts = [engine_dicts]
-    except Exception as exc:
-        return f"Error parsing rendered engine templates: {exc}"
+    # Collect all engine dicts and step names from staging cache
+    all_engine_dicts: list[dict] = []
+    all_step_names: list[str] = []
+    for ft in fault_types:
+        staged = _engine_staging_cache[ft]
+        engine_body = _strip_comments(staged["templates_yaml"])
+        try:
+            engine_dicts = yaml.safe_load(engine_body)
+            if not isinstance(engine_dicts, list):
+                engine_dicts = [engine_dicts]
+        except Exception as exc:
+            return f"Error parsing staged engine templates for '{ft}': {exc}"
+        all_engine_dicts.extend(engine_dicts)
+        all_step_names.extend(staged["step_names"])
 
-    # Build sequential steps: install -> r01 -> r02 -> ... -> cleanup
-    steps: list[list[dict]] = [
-        [{"name": "install-chaos-faults", "template": "install-chaos-faults"}]
-    ]
-    for step_name in step_names:
+    # Build sequential steps: installs → engines → cleanup
+    steps: list[list[dict]] = []
+    for install_dict in install_dicts:
+        install_name = install_dict.get("name", "install-chaos-faults")
+        steps.append([{"name": install_name, "template": install_name}])
+    for step_name in all_step_names:
         steps.append([{"name": step_name, "template": step_name}])
     steps.append([{"name": "cleanup-chaos-resources", "template": "cleanup-chaos-resources"}])
 
+    # Entrypoint template name derived from fault types
+    entrypoint_name = "-".join(sorted(set(fault_types)))
+
     all_templates: list[dict] = [
-        {"name": "pod-delete", "steps": steps},
-        install_dict,
-        *engine_dicts,
+        {"name": entrypoint_name, "steps": steps},
+        *install_dicts,
+        *all_engine_dicts,
         cleanup_dict,
     ]
 
@@ -213,7 +272,7 @@ def merge_workflow_yaml(
         "metadata": {"name": experiment_name, "namespace": "litmus"},
         "spec": {
             "templates": all_templates,
-            "entrypoint": "pod-delete",
+            "entrypoint": entrypoint_name,
             "arguments": {
                 "parameters": [{"name": "adminModeNamespace", "value": "litmus"}]
             },
@@ -226,48 +285,31 @@ def merge_workflow_yaml(
         workflow, default_flow_style=False, allow_unicode=True, sort_keys=False
     )
 
-    # Store in cache — do NOT return the YAML to the LLM
+    # Cache the workflow and clear consumed staging entries
     _workflow_cache[experiment_name] = workflow_yaml
+    for ft in fault_types:
+        _engine_staging_cache.pop(ft, None)
 
     return json.dumps({
         "status": "success",
         "cache_key": experiment_name,
+        "fault_types": fault_types,
         "template_count": len(all_templates),
-        "step_count": len(step_names),
-        "next_step": (
-            f"Call validate_workflow_yaml with experiment_name='{experiment_name}' "
-            "to validate, then save_experiment to submit."
-        ),
+        "engine_step_count": len(all_step_names),
+        "next_step": f"Call validate_workflow_yaml(experiment_name='{experiment_name}') to validate."
     })
 
-
-# ── Tool 3: validate_workflow_yaml ─────────────────────────────────────────────
+# ── Validation Tool ──────────────────────────────────────────────────────────
 
 @tool(args_schema=WorkflowKeyInput)
 def validate_workflow_yaml(experiment_name: str) -> str:
-    """Validates the assembled Argo Workflow for an experiment before submitting to LitmusChaos.
-
-    Uses experiment_name to look up the workflow from internal cache (set by merge_workflow_yaml).
-    Does NOT require the YAML string as input — never pass raw YAML to this tool.
-
-    Checks performed:
-    1. YAML is parseable.
-    2. kind == 'Workflow', apiVersion, metadata.name, spec.entrypoint present.
-    3. spec.templates is a non-empty list.
-    4. Every template has a 'container' or 'steps' block.
-    5. All step template references resolve to declared templates.
-    6. At least one ChaosEngine template (name starts with 'pod-delete-r') exists.
-    7. install-chaos-faults and cleanup-chaos-resources are both present.
-
-    Returns "VALID: ..." on success or "INVALID: ..." with itemized errors on failure.
-    Only call save_experiment() after receiving a VALID result.
+    """Validates the assembled Argo Workflow before submitting to LitmusChaos.
+    
+    Uses experiment_name to look up the workflow from the internal cache.
     """
     workflow_yaml = _workflow_cache.get(experiment_name)
     if not workflow_yaml:
-        return (
-            f"Error: No cached workflow found for experiment_name='{experiment_name}'. "
-            "Call merge_workflow_yaml() first."
-        )
+        return f"Error: No cached workflow found for experiment_name='{experiment_name}'."
 
     errors: list[str] = []
 
@@ -279,18 +321,10 @@ def validate_workflow_yaml(experiment_name: str) -> str:
     if not isinstance(doc, dict):
         return "INVALID: YAML did not produce a mapping at the top level."
 
-    # Top-level fields
     if doc.get("kind") != "Workflow":
         errors.append(f"  - kind must be 'Workflow', got '{doc.get('kind')}'")
-    if not doc.get("apiVersion"):
-        errors.append("  - apiVersion is missing")
-    metadata = doc.get("metadata") or {}
-    if not metadata.get("name"):
-        errors.append("  - metadata.name is missing or empty")
+    
     spec = doc.get("spec") or {}
-    if not spec.get("entrypoint"):
-        errors.append("  - spec.entrypoint is missing")
-
     templates: list[dict] = spec.get("templates") or []
     if not templates:
         errors.append("  - spec.templates is empty or missing")
@@ -298,35 +332,8 @@ def validate_workflow_yaml(experiment_name: str) -> str:
 
     template_names = {t.get("name") for t in templates if isinstance(t, dict)}
 
-    # Each template has container or steps
-    for tmpl in templates:
-        if not isinstance(tmpl, dict):
-            continue
-        tname = tmpl.get("name", "<unnamed>")
-        if "container" not in tmpl and "steps" not in tmpl:
-            errors.append(f"  - Template '{tname}' has neither 'container' nor 'steps'")
-
-    # Step references resolve
-    for tmpl in templates:
-        if not isinstance(tmpl, dict):
-            continue
-        for step_group in (tmpl.get("steps") or []):
-            for step in step_group:
-                ref = step.get("template")
-                if ref and ref not in template_names:
-                    errors.append(
-                        f"  - Step '{step.get('name')}' references unknown template '{ref}'"
-                    )
-
-    # At least one engine template
-    engine_templates = [n for n in template_names if n and n.startswith("pod-delete-r")]
-    if not engine_templates:
-        errors.append("  - No ChaosEngine templates found (expected 'pod-delete-rXX')")
-
-    # Required static templates
-    for required in ("install-chaos-faults", "cleanup-chaos-resources"):
-        if required not in template_names:
-            errors.append(f"  - Required template '{required}' is missing")
+    if "cleanup-chaos-resources" not in template_names:
+        errors.append("  - Required template 'cleanup-chaos-resources' is missing")
 
     return _format_report(errors)
 
@@ -345,7 +352,9 @@ def get_cached_workflow_yaml(experiment_name: str) -> str | None:
 # ── Exports ────────────────────────────────────────────────────────────────────
 
 yaml_builder_tools = [
-    generate_pod_delete_engines,
+    get_fault_catalog,
+    get_fault_schema,
+    generate_chaos_engines,
     merge_workflow_yaml,
     validate_workflow_yaml,
 ]

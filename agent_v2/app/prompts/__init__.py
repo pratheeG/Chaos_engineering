@@ -1,1 +1,1 @@
-from prompts.system import PLANNER_SYSTEM_PROMPT
+from .chaos_prompts import PLANNER_SYSTEM_PROMPT, EXECUTOR_SYSTEM_PROMPT

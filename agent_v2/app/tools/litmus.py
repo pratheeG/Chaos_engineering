@@ -132,7 +132,7 @@ def list_probes() -> str:
 import yaml
 import uuid
 from config import settings
-from tools.yaml_builder import SaveExperimentInput, get_cached_workflow_yaml
+from tools.yaml_builder import SaveExperimentInput, get_cached_workflow_yaml, yaml_builder_tools
 
 @tool(args_schema=SaveExperimentInput)
 def save_experiment(
@@ -147,9 +147,9 @@ def save_experiment(
     (stored by merge_workflow_yaml). Do NOT pass the YAML string directly.
 
     IMPORTANT: Call tools in this order first:
-      1. generate_pod_delete_engines() - generate engine template blocks
-      2. merge_workflow_yaml()          - assemble and cache the workflow
-      3. validate_workflow_yaml()       - confirm VALID before saving
+      1. generate_chaos_engines() - for each fault type
+      2. merge_workflow_yaml()    - assemble and cache the workflow
+      3. validate_workflow_yaml() - confirm VALID before saving
     Only call this tool after validate_workflow_yaml() returns a VALID result.
 
     Args:
@@ -219,18 +219,20 @@ def run_experiment(experiment_id: str) -> str:
 
 # ── Export ────────────────────────────────────────────────────────────────────
 
+# Imported from yaml_builder_tools: get_fault_catalog, get_fault_schema, generate_chaos_engines
+
 planner_tools = [
     list_experiments,
     get_hub_faults,
     list_kubernetes_deployments,
     list_probes,
+    yaml_builder_tools[0],  # get_fault_catalog
+    yaml_builder_tools[1],  # get_fault_schema
 ]
-
-from tools.yaml_builder import yaml_builder_tools
 
 executor_tools = [
     list_experiments,
-    *yaml_builder_tools,   # generate_pod_delete_engines, merge_workflow_yaml, validate_workflow_yaml
+    *yaml_builder_tools,   # get_fault_catalog, get_fault_schema, generate_chaos_engines, merge_workflow_yaml, validate_workflow_yaml
     save_experiment,
     run_experiment,
 ]
