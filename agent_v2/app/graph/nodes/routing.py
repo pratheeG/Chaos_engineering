@@ -26,3 +26,10 @@ def route_from_executor(state: ChaosState) -> str:
     if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
         return "executor_tools"
     return END
+
+
+def route_from_observer(state: ChaosState) -> str:
+    last_msg = state["messages"][-1]
+    if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+        return "observer_tools"
+    return END
