@@ -156,18 +156,35 @@ def generate_chaos_engines(fault_type: str, deployments: List[Dict[str, Any]]) -
     rendered_blocks: list[str] = []
     step_names: list[str] = []
 
+    # Build a defaults map from the registry so optional params are never undefined
+    param_defaults: dict[str, str] = {}
+    for param_name, param_meta in fault_data.get("parameters", {}).items():
+        if not param_meta.get("required", True) and "default" in param_meta:
+            param_defaults[param_name] = str(param_meta["default"])
+
     for idx, dep in enumerate(deployments):
         engine_id = f"r{idx + 1:02d}"
-        
-        # Prepare context for rendering
-        context = dep.copy()
+
+        # Start with registry defaults, then overlay what the LLM provided
+        context = {**param_defaults, **dep}
         context["engine_id"] = engine_id
-        
-        # Ensure probe_ref is built if probe_name is provided
+
+        # Build probe_ref from probe_name if given; default to empty list
         if "probe_name" in context:
             context["probe_ref"] = _build_probe_ref(context.get("probe_name"))
         elif "probe_ref" not in context:
             context["probe_ref"] = "[]"
+
+        # Validate that all required parameters are present before rendering
+        missing_required = [
+            p for p, meta in fault_data.get("parameters", {}).items()
+            if meta.get("required", True) and p not in context
+        ]
+        if missing_required:
+            return (
+                f"Error: Missing required parameters for '{dep.get('name', 'unknown')}': "
+                f"{missing_required}. Check get_fault_schema('{fault_type}') for the full list."
+            )
 
         try:
             block = template.render(**context)
@@ -182,6 +199,12 @@ def generate_chaos_engines(fault_type: str, deployments: List[Dict[str, Any]]) -
         "step_names": step_names,
     }
 
+    print("\n\n\nstaged", json.dumps({
+        "status": "staged",
+        "fault_type": fault_type,
+        "step_names": step_names,
+        "next_step": "Call merge_workflow_yaml() after generating all required engine blocks."
+    }))
     return json.dumps({
         "status": "staged",
         "fault_type": fault_type,

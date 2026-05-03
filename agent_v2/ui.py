@@ -17,6 +17,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "current_agent" not in st.session_state:
     st.session_state.current_agent = "Agent"
+if "last_error" not in st.session_state:
+    st.session_state.last_error = None
 
 # Handshake: Sync agent status with backend for the current thread
 def sync_agent_status():
@@ -49,6 +51,7 @@ render_chat()
 
 def send_to_orchestrator(user_prompt: str):
     """Hits the unified /chat endpoint"""
+    st.session_state.last_error = None  # Clear previous errors on new attempt
     st.session_state.messages.append({"role": "user", "content": user_prompt})
     
     # Render the user's message immediately so it doesn't disappear during loading
@@ -88,9 +91,27 @@ def send_to_orchestrator(user_prompt: str):
             st.rerun()
             
         except requests.exceptions.ConnectionError:
-            st.error("Cannot connect to backend server. Is FastAPI running on port 8000?")
+            st.session_state.last_error = "🔌 **Connection Error**: Cannot connect to the Chaos Master backend. Ensure FastAPI is running."
+        except requests.exceptions.HTTPError:
+            try:
+                error_detail = resp.json().get("detail", "Unknown server error.")
+                st.session_state.last_error = f"⚠️ **Orchestrator Error ({resp.status_code})**: {error_detail}"
+            except:
+                st.session_state.last_error = f"⚠️ **Server Error ({resp.status_code})**: {resp.text}"
         except Exception as e:
-            st.error(f"Error calling Orchestrator API: {e}")
+            st.session_state.last_error = f"❌ **Unexpected Error**: {e}"
+
+# Render global error if it exists
+if st.session_state.last_error:
+    st.error(st.session_state.last_error)
+    if st.button("Reset Session & Clear Error"):
+        try:
+            requests.delete(f"{API_BASE}/state/{st.session_state.thread_id}")
+        except:
+            pass
+        st.session_state.last_error = None
+        st.session_state.messages = []
+        st.rerun()
 
 # Handle chat input
 if prompt := st.chat_input("Ask a question or describe a chaos goal..."):
@@ -110,6 +131,8 @@ with st.sidebar:
         st.session_state.thread_id = str(uuid.uuid4())
         st.session_state.messages = []
         st.session_state.current_agent = "Agent"
+        st.session_state.last_error = None
+        st.session_state.last_synced_thread = None  # Force handshake on new thread
         st.rerun()
     
     st.divider()

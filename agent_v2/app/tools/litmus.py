@@ -176,6 +176,9 @@ def save_experiment(
             return f"Error: Cached workflow YAML could not be parsed - {exc}."
 
         manifest_json_str = json.dumps(workflow_dict)
+        
+        # Litmus requires the name in the mutation to match metadata.name in the manifest YAML
+        actual_manifest_name = workflow_dict.get("metadata", {}).get("name", name)
 
         infra_id = settings.litmus_infra_id
         if not infra_id:
@@ -183,7 +186,7 @@ def save_experiment(
 
         request_payload = {
             "id": str(uuid.uuid4()),
-            "name": name,
+            "name": actual_manifest_name,
             "description": desc,
             "tags": tags,
             "infraID": infra_id,
