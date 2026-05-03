@@ -89,25 +89,28 @@ class LitmusClient:
     def get_experiment(self, experiment_id: str) -> dict[str, Any]:
         """Return details of a specific experiment by ID."""
         query = """
-        query GetExperiment($projectID: ID!, $experimentID: ID!) {
+        query GetExperiment($projectID: ID!, $experimentID: String!) {
             getExperiment(projectID: $projectID, experimentID: $experimentID) {
-                experimentID
-                experimentType
-                experimentManifest
-                name
-                description
-                tags
-                infra {
-                    infraID
+                experimentDetails {
+                    experimentID
+                    experimentType
+                    experimentManifest
                     name
-                    environmentID
+                    description
+                    tags
+                    infra {
+                        infraID
+                        name
+                        environmentID
+                    }
+                    recentExperimentRunDetails {
+                        experimentRunID
+                        phase
+                        resiliencyScore
+                        updatedAt
+                    }
                 }
-                recentExperimentRunDetails {
-                    experimentRunID
-                    phase
-                    resiliencyScore
-                    updatedAt
-                }
+                averageResiliencyScore
             }
         }
         """
@@ -222,4 +225,84 @@ class LitmusClient:
             "request": request,
         }
         return self._post({"query": query, "variables": variables})
-                
+
+    def get_experiment_run(self, experiment_run_id: str, notify_id: str | None = None) -> dict[str, Any]:
+        """Return full details of a specific experiment run by its run ID."""
+        query = """
+        query GetExperimentRun($projectID: ID!, $experimentRunID: ID, $notifyID: ID) {
+            getExperimentRun(projectID: $projectID, experimentRunID: $experimentRunID, notifyID: $notifyID) {
+                projectID
+                experimentRunID
+                experimentID
+                experimentName
+                experimentType
+                phase
+                resiliencyScore
+                faultsPassed
+                faultsFailed
+                faultsAwaited
+                faultsStopped
+                faultsNa
+                totalFaults
+                updatedAt
+                createdAt
+                experimentManifest
+                notifyID
+                infra {
+                    infraID
+                    name
+                }
+                weightages {
+                    faultName
+                    weightage
+                }
+            }
+        }
+        """
+        variables = {
+            "projectID": self._project_id,
+            "experimentRunID": experiment_run_id,
+            "notifyID": notify_id
+        }
+        return self._post({"query": query, "variables": variables})
+
+    def list_experiment_runs(self, experiment_id: str, limit: int = 1) -> dict[str, Any]:
+        """Returns list of runs for a specific experiment to get notifyID etc."""
+        query = """
+        query ListExperimentRun($projectID: ID!, $request: ListExperimentRunRequest!) {
+            listExperimentRun(projectID: $projectID, request: $request) {
+                totalNoOfExperimentRuns
+                experimentRuns {
+                    projectID
+                    experimentRunID
+                    experimentName
+                    notifyID
+                    resiliencyScore
+                    phase
+                }
+            }
+        }
+        """
+        variables = {
+            "projectID": self._project_id,
+            "request": {
+                "experimentIDs": [experiment_id],
+                "pagination": {"page": 0, "limit": limit}
+            }
+        }
+        return self._post({"query": query, "variables": variables})
+
+    def get_latest_experiment_run_details(self, experiment_id: str) -> dict[str, str] | None:
+        """Fetch the most recent run ID and notify ID for a given experiment."""
+        data = self.list_experiment_runs(experiment_id, limit=1)
+        print('data', data)
+        runs = data.get("listExperimentRun", {}).get("experimentRuns") or []
+        if not runs:
+            return None
+        
+        latest = runs[0]
+        return {
+            "experimentRunID": latest.get("experimentRunID"),
+            "notifyID": latest.get("notifyID")
+        }
+

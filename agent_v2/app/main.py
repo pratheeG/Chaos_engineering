@@ -15,6 +15,7 @@ from fastapi import FastAPI
 
 from graph.master import build_master_graph
 from api.routes import router, set_graph
+from api.k8s_routes import k8s_router
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -29,3 +30,4 @@ _master = build_master_graph()
 set_graph(_master)
 
 app.include_router(router)
+app.include_router(k8s_router, prefix="/k8s", tags=["Kubernetes Observer"])

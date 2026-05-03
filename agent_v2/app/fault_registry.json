@@ -3,6 +3,7 @@
     "description": "Deletes pods to test resilience and restart recovery.",
     "template": "pod-delete-engine.yaml.j2",
     "install_yaml": "pod-delete-install.yaml",
+    "k8s_signals": ["Killing", "Started", "Pulled", "BackOff"],
     "parameters": {
       "chaos_duration": {"type": "str", "required": true, "description": "Fault duration in seconds"},
       "target_namespace": {"type": "str", "required": true, "description": "Kubernetes namespace"},
@@ -15,6 +16,7 @@
     "description": "Stresses CPU on a pod to test throttling and performance degradation.",
     "template": "pod-cpu-hog-engine.yaml.j2",
     "install_yaml": "pod-cpu-hog-install.yaml",
+    "k8s_signals": ["OOMKilling", "SystemOOM", "Evicted", "Preempted"],
     "parameters": {
       "chaos_duration": {"type": "str", "required": true,  "description": "Fault duration in seconds"},
       "target_namespace":{"type": "str", "required": true,  "description": "Kubernetes namespace"},
@@ -29,6 +31,7 @@
     "description": "Stresses memory on a pod to test OOM handling and eviction.",
     "template": "pod-memory-hog-engine.yaml.j2",
     "install_yaml": "pod-memory-hog-install.yaml",
+    "k8s_signals": ["OOMKilling", "SystemOOM", "Evicted"],
     "parameters": {
       "chaos_duration": {"type": "str", "required": true,  "description": "Fault duration in seconds"},
       "target_namespace":{"type": "str", "required": true,  "description": "Kubernetes namespace"},
