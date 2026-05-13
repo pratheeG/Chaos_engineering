@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     litmus_hub_id: str = Field(default="")
     litmus_infra_id: str = Field(default="")
 
+    # ── Prometheus ──────────────────────────────────────────────────────────
+    prometheus_url: str = Field(default="http://localhost:9090")
+
     # ── LangSmith (Tracing) ──────────────────────────────────────────────────
     langsmith_tracing: str = Field(default="false", validation_alias="LANGSMITH_TRACING")
     langsmith_endpoint: str = Field(default="https://api.smith.langchain.com", validation_alias="LANGSMITH_ENDPOINT")

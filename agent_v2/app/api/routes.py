@@ -111,3 +111,19 @@ async def reset_state(thread_id: str):
 @router.get("/health")
 async def health():
     return {"status": "ok", "llm_provider": settings.llm_provider, "orchestrator": "v3-master"}
+
+
+@router.get("/observer/verify/{experiment_id}")
+async def verify_experiment(experiment_id: str):
+    """Direct endpoint to trigger the Observer Agent's verification logic."""
+    from tools.observer_tools import verify_experiment_run
+    import json
+    try:
+        # verify_experiment_run returns a JSON string (ObservationReport)
+        result_str = verify_experiment_run.invoke({"experiment_id": experiment_id})
+        try:
+            return json.loads(result_str)
+        except json.JSONDecodeError:
+            return {"detail": result_str}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))

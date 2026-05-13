@@ -295,7 +295,6 @@ class LitmusClient:
     def get_latest_experiment_run_details(self, experiment_id: str) -> dict[str, str] | None:
         """Fetch the most recent run ID and notify ID for a given experiment."""
         data = self.list_experiment_runs(experiment_id, limit=1)
-        print('data', data)
         runs = data.get("listExperimentRun", {}).get("experimentRuns") or []
         if not runs:
             return None

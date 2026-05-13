@@ -18,7 +18,9 @@ from typing import Any
 
 from services.litmus_client import LitmusClient
 from services.k8s_client import K8sClient
+from services.prometheus_client import PrometheusClient
 from config import settings
+from datetime import datetime, timezone
 
 
 # ── K8s event reasons that indicate each fault type ──────────────────────────
@@ -50,6 +52,7 @@ class FaultObservation:
     k8s_signals_found: list[str]
     matching_events: list[dict]
     chaos_confirmed: bool
+    metrics: dict[str, Any] = field(default_factory=dict)
     note: str = ""
 
 
@@ -160,6 +163,58 @@ class ObserverService:
             hub_id=settings.litmus_hub_id,
         )
         self._k8s = K8sClient()
+        self._prom = PrometheusClient(settings.prometheus_url)
+
+    def _analyze_metrics(self, fault_type: str, metrics: dict[str, Any]) -> tuple[bool, str]:
+        """Analyze Prometheus metrics to see if chaos signals are present."""
+        if not metrics:
+            return False, ""
+
+        # 1. Pod Count (Good for pod-delete, pod-kill, etc)
+        pod_series = metrics.get("pod_count", [])
+        if pod_series and "values" in pod_series[0]:
+            values = [float(v[1]) for v in pod_series[0]["values"]]
+            if values:
+                min_pods = min(values)
+                max_pods = max(values)
+                if min_pods < max_pods:
+                    return True, f"Confirmed: Pod count dropped from {int(max_pods)} to {int(min_pods)} during experiment."
+
+        # 2. CPU Usage (Good for cpu-hog)
+        cpu_series = metrics.get("cpu", [])
+        if "cpu" in fault_type.lower() and cpu_series and "values" in cpu_series[0]:
+            values = [float(v[1]) for v in cpu_series[0]["values"]]
+            if values:
+                avg = sum(values) / len(values)
+                peak = max(values)
+                if peak > avg * 1.5:  # 50% spike over average
+                    return True, f"Confirmed: Detected a CPU spike of {peak:.2f} (avg: {avg:.2f}) via Prometheus."
+
+        # 3. Memory Usage (Good for memory-hog)
+        mem_series = metrics.get("memory", [])
+        if "memory" in fault_type.lower() and mem_series and "values" in mem_series[0]:
+            values = [float(v[1]) for v in mem_series[0]["values"]]
+            if values:
+                start_mem = values[0]
+                peak_mem = max(values)
+                if peak_mem > start_mem * 1.2: # 20% growth
+                    return True, f"Confirmed: Detected memory growth from {start_mem/1024/1024:.1f}MB to {peak_mem/1024/1024:.1f}MB."
+
+        return False, ""
+
+    def _parse_litmus_time(self, time_str: str | None) -> datetime:
+        """Parse Litmus timestamp string to datetime."""
+        if not time_str:
+            return datetime.now(timezone.utc)
+        try:
+            # Litmus often returns Unix timestamps as strings or floats
+            return datetime.fromtimestamp(float(time_str)/1000, tz=timezone.utc)
+        except (ValueError, TypeError):
+            try:
+                # Fallback to ISO parsing
+                return datetime.fromisoformat(float(time_str)/1000, tz=timezone.utc).replace("Z", "+00:00")
+            except Exception:
+                return datetime.now(timezone.utc)
 
     def observe(self, experiment_id: str) -> ObservationReport:
         """Run full observation for the latest run of an experiment."""
@@ -199,9 +254,15 @@ class ObserverService:
         total_faults = run.get("totalFaults") or 0
         exp_name = run.get("experimentName", "unknown")
         manifest_raw = run.get("experimentManifest", "")
+        start_time = self._parse_litmus_time(run.get("createdAt"))
+        print('start_time ', start_time)
+        end_time = self._parse_litmus_time(run.get("updatedAt"))
+        print('end_time ', end_time)
 
         # 3. Parse manifest to get fault targets
         targets = _parse_manifest(manifest_raw)
+
+        print('targets', targets)
 
         # 4. Fetch K8s events per unique namespace
         namespaces = list({t["target_namespace"] for t in targets}) or ["litmus"]
@@ -218,6 +279,37 @@ class ObserverService:
             expected = get_fault_signals(target["fault_type"])
             found, matching = _detect_signals(all_events, target["app_label"], target["fault_type"])
             confirmed = len(found) > 0
+
+            # 5.b Fetch Prometheus metrics
+            metrics = {}
+            try:
+                # Use app_label as pod prefix for prometheus query
+                pod_prefix = target["app_label"].split("=", 1)[-1] if "=" in target["app_label"] else target["app_label"]
+                metrics = self._prom.get_container_metrics(
+                    namespace=target["target_namespace"],
+                    pod_prefix=pod_prefix,
+                    start=start_time,
+                    end=end_time,
+                )
+            except Exception as e:
+                print(f"Warning: Could not fetch Prometheus metrics: {e}")
+
+            # 5.c Final confirmation logic (K8s Events OR Prometheus Metrics)
+            metric_confirmed, metric_note = self._analyze_metrics(target["fault_type"], metrics)
+            
+            final_confirmed = confirmed or metric_confirmed
+            
+            note = ""
+            if confirmed:
+                note = "Confirmed via Kubernetes events."
+            elif metric_confirmed:
+                note = f"Kubernetes events expired or missing. {metric_note}"
+            else:
+                note = (
+                    "No matching K8s events or significant Prometheus metric changes found. "
+                    "Chaos may not have run, or data may have expired."
+                )
+
             fault_observations.append(FaultObservation(
                 fault_type=target["fault_type"],
                 target_namespace=target["target_namespace"],
@@ -225,11 +317,9 @@ class ObserverService:
                 expected_signals=expected,
                 k8s_signals_found=found,
                 matching_events=matching[:10],  # cap at 10 events per fault
-                chaos_confirmed=confirmed,
-                note="" if confirmed else (
-                    "No matching K8s events found. Chaos may not have run, "
-                    "or events may have expired (default TTL = 1 hour)."
-                ),
+                chaos_confirmed=final_confirmed,
+                metrics=metrics,
+                note=note
             ))
 
         # 6. Determine overall verdict
