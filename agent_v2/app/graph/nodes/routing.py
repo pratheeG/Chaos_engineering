@@ -32,4 +32,12 @@ def route_from_observer(state: ChaosState) -> str:
     last_msg = state["messages"][-1]
     if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
         return "observer_tools"
-    return END
+    # Pause for human feedback (the supervisor will then decide if we go to feedback agent)
+    return "human_feedback"
+
+
+def route_from_feedback(state: ChaosState) -> str:
+    last_msg = state["messages"][-1]
+    if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+        return "feedback_tools"
+    return "human_feedback"

@@ -40,7 +40,7 @@ def supervisor_node(state: ChaosState) -> dict:
 
     system_msg = SystemMessage(
         content=SUPERVISOR_SYSTEM_PROMPT.format(supported_faults=fault_list)
-        + "\nRespond with 'planner', 'executor', 'observer', or the polite refusal message."
+        + "\nRespond with 'planner', 'executor', 'observer', 'feedback', or the polite refusal message."
     )
 
     response = llm.invoke([system_msg] + clean_messages)
@@ -52,6 +52,8 @@ def supervisor_node(state: ChaosState) -> dict:
         return {"next_agent": "planner"}
     elif decision == "observer":
         return {"next_agent": "observer"}
+    elif decision == "feedback":
+        return {"next_agent": "feedback"}
     else:
         # Refusal or unrecognised — surface the message and pause for human input
         return {

@@ -14,7 +14,7 @@ class ChaosState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     
     # Routing control
-    next_agent: Literal["planner", "executor", "end"]
+    next_agent: Literal["planner", "executor", "observer", "feedback", "human_feedback", "end"]
     
     # State flags
     confirmed: bool

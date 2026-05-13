@@ -80,3 +80,9 @@ if (-not $SkipInstall) {
 
 # Port Forward it manually to access it via the system ip:9091
 # kubectl port-forward -n litmus --address 0.0.0.0 svc/chaos-litmus-frontend-service  9091:9091
+
+# Prometheus Port Forward it manually to access it via the system ip:9090
+# kubectl port-forward -n monitoring --address 0.0.0.0 svc/prometheus-k8s 9090:9090
+
+# Grafana Port Forward it manually to access it via the system ip:3000
+# kubectl port-forward -n monitoring --address 0.0.0.0 svc/grafana  3000:3000

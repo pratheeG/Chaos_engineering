@@ -15,12 +15,14 @@ from graph.nodes.supervisor import supervisor_node
 from graph.nodes.planner import planner_node
 from graph.nodes.executor import executor_node
 from graph.nodes.observer import observer_node
+from graph.nodes.feedback import feedback_node
 from graph.nodes.human_feedback import human_feedback_node
 from graph.nodes.routing import (
     route_from_supervisor, 
     route_from_planner, 
     route_from_executor,
     route_from_observer,
+    route_from_feedback,
 )
 from tools.litmus import planner_tools, executor_tools
 from tools.config_tool import config_tools
@@ -40,11 +42,13 @@ def build_master_graph():
     builder.add_node("executor_tools", ToolNode(executor_tools + config_tools))
     builder.add_node("observer", observer_node)
     builder.add_node("observer_tools", ToolNode(observer_tools + k8s_observer_tools))
+    builder.add_node("feedback", feedback_node)
+    builder.add_node("feedback_tools", ToolNode(observer_tools + planner_tools))
     builder.add_node("human_feedback", human_feedback_node)
 
     builder.set_entry_point("supervisor")
 
-    # Supervisor → Planner / Executor / Observer / human_feedback (refusal)
+    # Supervisor → Planner / Executor / Observer / Feedback / human_feedback (refusal)
     builder.add_conditional_edges(
         "supervisor",
         route_from_supervisor,
@@ -52,6 +56,7 @@ def build_master_graph():
             "planner": "planner", 
             "executor": "executor", 
             "observer": "observer",
+            "feedback": "feedback",
             "human_feedback": "human_feedback"
         },
     )
@@ -72,13 +77,21 @@ def build_master_graph():
     )
     builder.add_edge("executor_tools", "executor")
 
-    # Observer loop -> Pause for follow-up user queries
+    # Observer loop -> Pause for user confirmation before moving to Feedback
     builder.add_conditional_edges(
         "observer",
         route_from_observer,
-        {"observer_tools": "observer_tools", END: "human_feedback"},
+        {"observer_tools": "observer_tools", "human_feedback": "human_feedback"},
     )
     builder.add_edge("observer_tools", "observer")
+
+    # Feedback loop -> Pause for user follow-up
+    builder.add_conditional_edges(
+        "feedback",
+        route_from_feedback,
+        {"feedback_tools": "feedback_tools", "human_feedback": "human_feedback"},
+    )
+    builder.add_edge("feedback_tools", "feedback")
 
     # Resume from human feedback → supervisor re-evaluates intent
     builder.add_edge("human_feedback", "supervisor")

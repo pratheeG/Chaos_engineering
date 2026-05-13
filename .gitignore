@@ -13,3 +13,5 @@ k8s/**/secret.yaml
 __pycache__/
 *.pyc
 **/Secrets.toml
+
+litmus/
