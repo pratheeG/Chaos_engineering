@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 from dotenv import load_dotenv
 
-# Resolve root .env: agent_v2/app/config.py -> agent_v2/app -> agent_v2 -> project root
+# Resolve root .env: agent/app/config.py -> agent/app -> agent -> project root
 _root_env = Path(__file__).resolve().parent.parent.parent / ".env"
 
 # Load explicitly just in case Pydantic misses it for os.environ purposes
